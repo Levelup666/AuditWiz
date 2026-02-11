@@ -28,9 +28,14 @@ CREATE TABLE public.study_members (
   role TEXT NOT NULL CHECK (role IN ('creator', 'reviewer', 'approver', 'auditor', 'admin')),
   granted_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   granted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  revoked_at TIMESTAMPTZ,
-  UNIQUE(study_id, user_id, role) WHERE revoked_at IS NULL
+  revoked_at TIMESTAMPTZ
 );
+
+-- Partial unique index: one active (non-revoked) role assignment per (study, user, role)
+-- Allows same user to have multiple roles in a study, but not duplicate active role assignments
+CREATE UNIQUE INDEX idx_study_members_unique_active
+  ON public.study_members(study_id, user_id, role)
+  WHERE revoked_at IS NULL;
 
 -- Records: Immutable research records with versioning
 -- Records cannot be edited; amendments create new versions
