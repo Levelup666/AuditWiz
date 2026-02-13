@@ -33,7 +33,15 @@ The following environment variables **must** be set in your Vercel project setti
 
 5. **`ALCHEMY_RPC_URL`** (Optional)
    - Alchemy RPC endpoint URL
-   - Only needed for blockchain anchoring functionality
+   - Only needed for on-chain blockchain anchoring
+
+6. **`ANCHOR_PRIVATE_KEY`** (Optional)
+   - Ethereum private key (with small balance on the target chain) for anchoring transactions
+   - Required only if you want hashes written on-chain; otherwise anchors are stored in DB only
+
+7. **`SUPABASE_SERVICE_ROLE_KEY`** (Optional, server-side only)
+   - Supabase service role key for admin operations (e.g. study members by email, document storage uploads)
+   - Never expose to the client
 
 ### Setting Environment Variables in Vercel
 
@@ -56,8 +64,8 @@ If you're seeing NOT_FOUND errors on Vercel:
    - Verify `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are configured
    - Ensure they're set for the correct environment (Production/Preview)
 
-2. **Verify middleware configuration**
-   - Middleware should exclude `/api` routes (see `middleware.ts`)
+2. **Verify proxy configuration**
+   - Request handling excludes `/api` routes (see `proxy.ts`, Next.js 16 proxy convention)
    - API routes handle their own authentication
 
 3. **Check build logs**
@@ -90,10 +98,23 @@ If Vercel doesn't auto-detect, manually set:
 - Framework: Next.js
 - Root Directory: `.` (project root)
 
+### Document storage
+
+Create a Storage bucket named **`documents`** in Supabase (Dashboard → Storage → New bucket) so record file uploads work.
+
+### Blockchain anchoring
+
+For on-chain anchoring, install the optional dependency and set env:
+
+- `npm install viem` (optional; without it, anchors are stored in DB only)
+- `ALCHEMY_RPC_URL` – your Alchemy RPC URL
+- `ANCHOR_PRIVATE_KEY` – wallet private key with a small balance on Base (or set `ANCHOR_CHAIN_ID=1` for Ethereum mainnet)
+
 ### Post-Deployment Checklist
 
 - [ ] All required environment variables are set
-- [ ] Database migrations are applied
+- [ ] Database migrations are applied (`supabase db push`)
+- [ ] Storage bucket `documents` exists (for file attachments)
 - [ ] Test authentication flow (sign in/sign up)
 - [ ] Verify API routes are accessible (`/api/system-actions`)
 - [ ] Test protected routes (`/studies`, `/dashboard`)

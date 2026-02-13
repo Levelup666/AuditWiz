@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -34,7 +34,7 @@ export async function middleware(request: NextRequest) {
     } = await supabase.auth.getUser()
 
     // Protect dashboard/study routes - require authentication
-    if (request.nextUrl.pathname.startsWith('/studies') || 
+    if (request.nextUrl.pathname.startsWith('/studies') ||
         request.nextUrl.pathname.startsWith('/dashboard')) {
       if (!user) {
         const url = request.nextUrl.clone()
@@ -54,8 +54,8 @@ export async function middleware(request: NextRequest) {
     }
   } catch (error) {
     // If Supabase client creation fails, just continue without auth checks
-    // This prevents middleware from breaking the entire request
-    console.error('Middleware error:', error)
+    // This prevents proxy from breaking the entire request
+    console.error('Proxy error:', error)
     return supabaseResponse
   }
 

@@ -6,7 +6,10 @@ import RecordAuditTrail from '@/components/records/record-audit-trail'
 import RecordSignatures from '@/components/records/record-signatures'
 import AmendRecordButton from '@/components/records/amend-record-button'
 import SignRecordButton from '@/components/records/sign-record-button'
-import { canCreateRecord, canApproveRecord } from '@/lib/supabase/permissions'
+import { canCreateRecord, canApproveRecord, canReviewRecord } from '@/lib/supabase/permissions'
+import RecordStatusActions from '@/components/records/record-status-actions'
+import RecordDocuments from '@/components/records/record-documents'
+import AnchorRecordButton from '@/components/records/anchor-record-button'
 
 interface RecordPageProps {
   params: Promise<{ id: string; recordId: string }>
@@ -37,6 +40,7 @@ export default async function RecordPage({ params }: RecordPageProps) {
   // Check permissions
   const canAmend = await canCreateRecord(user.id, id)
   const canSign = await canApproveRecord(user.id, id)
+  const canReject = await canReviewRecord(user.id, id) || canSign
 
   return (
     <div className="space-y-6">
@@ -54,12 +58,27 @@ export default async function RecordPage({ params }: RecordPageProps) {
             </p>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {canAmend && record.status !== 'approved' && (
-            <AmendRecordButton studyId={id} recordId={record.id} />
+            <AmendRecordButton studyId={id} recordId={record.id} currentContent={record.content} />
           )}
-          {canSign && record.status === 'under_review' && (
+          <RecordStatusActions
+            recordId={record.id}
+            studyId={id}
+            status={record.status}
+            canSubmit={canAmend}
+            canReject={canReject}
+          />
+          {canSign && (record.status === 'under_review' || record.status === 'submitted') && (
             <SignRecordButton studyId={id} record={record} />
+          )}
+          {record.status === 'approved' && (
+            <AnchorRecordButton
+              recordId={record.id}
+              studyId={id}
+              recordVersion={record.version}
+              canAnchor={canSign}
+            />
           )}
         </div>
       </div>
@@ -90,6 +109,16 @@ export default async function RecordPage({ params }: RecordPageProps) {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Documents</CardTitle>
+          <CardDescription>Attachments for this record</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RecordDocuments recordId={record.id} studyId={id} canUpload={canAmend} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -119,3 +119,39 @@ export async function getAllAuditEvents(
 
   return data;
 }
+
+/**
+ * Get audit events for export (optional study and date range filter)
+ */
+export async function getAuditEventsForExport(
+  studyId?: string | null,
+  from?: string | null,
+  to?: string | null,
+  limit: number = 5000
+) {
+  const supabase = await createClient();
+
+  let query = supabase
+    .from('audit_events')
+    .select('*')
+    .order('timestamp', { ascending: false })
+    .limit(limit);
+
+  if (studyId) {
+    query = query.eq('study_id', studyId);
+  }
+  if (from) {
+    query = query.gte('timestamp', from);
+  }
+  if (to) {
+    query = query.lte('timestamp', to);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to fetch audit events: ${error.message}`);
+  }
+
+  return data ?? [];
+}

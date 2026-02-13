@@ -40,7 +40,6 @@ export default function SignRecordButton({ studyId, record }: SignRecordButtonPr
     e.preventDefault()
     setError(null)
 
-    // Re-authenticate user before signing
     const supabase = createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
@@ -49,8 +48,21 @@ export default function SignRecordButton({ studyId, record }: SignRecordButtonPr
       return
     }
 
-    // For production, you would verify the password here
-    // For now, we'll just proceed with signature creation
+    if (!password.trim()) {
+      setError('Password is required to create a signature.')
+      return
+    }
+
+    // Re-authenticate with password before signing
+    const { error: reAuthError } = await supabase.auth.signInWithPassword({
+      email: user.email!,
+      password,
+    })
+
+    if (reAuthError) {
+      setError(reAuthError.message === 'Invalid login credentials' ? 'Invalid password.' : reAuthError.message)
+      return
+    }
 
     setLoading(true)
 
