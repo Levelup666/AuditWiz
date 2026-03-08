@@ -1,0 +1,251 @@
+# Project: Verifiable Research Integrity Platform (AuditWiz)
+# Architecture: Next.js + Supabase + Blockchain Anchoring
+# Collaboration & ORCID Identity Expansion Rules
+# Scope: Research-grade integrity system designed to be clinical-ready by design (not regulatory compliant yet)
+
+---
+## 🔐 Integrity First
+
+- Records are immutable.
+- Amendments create new versions.
+- Audit log is append-only.
+- No UPDATE or DELETE on audit events.
+
+## 🧬 ORCID Identity Rules
+
+- ORCID identity is immutable once linked.
+- ORCID linking must generate audit event.
+- Only one ORCID ID per user.
+- ORCID badge must be displayed where attribution is shown.
+- Invite-by-ORCID must bind to ORCID ID, not just email.
+
+## 🔐 Core Architectural Principles (Non-Negotiable)
+
+1. No record is ever overwritten.
+   - Updates must create new versions.
+   - Use amendment model, not inline edits.
+
+2. All significant actions must emit an audit event.
+   - Insert-only audit ledger.
+   - No UPDATE or DELETE on audit events.
+   - Audit log is append-only and immutable.
+
+3. All actions must be attributable to a verified individual or system actor.
+   - No anonymous actions.
+   - Role at time of action must be captured.
+   - AI/system actions must be clearly labeled as system actors.
+
+4. Human authority overrides automation.
+   - AI may suggest, summarize, or flag.
+   - AI may NOT finalize, approve, or anchor records.
+   - Approval requires authenticated human signature.
+
+5. Blockchain is an integrity anchor, not a data store.
+   - Never store PHI or sensitive data on-chain.
+   - Only store hashes.
+   - Prefer batching (Merkle roots) over per-record anchors where possible.
+
+6. Design for future algorithm agility.
+   - Store signature algorithm type.
+   - Prepare for future PQC integration.
+   - Do not hardcode cryptographic assumptions.
+
+---
+
+## 🧠 AI Usage Guidelines
+
+- AI outputs must be logged as audit events.
+- Log:
+  - model version
+  - input hash
+  - output hash
+- AI cannot:
+  - Approve records
+  - Modify immutable content
+  - Change role permissions
+  - Override workflow states
+
+AI is advisory-only.
+
+---
+
+## 🔑 Access Control Rules
+
+- Roles are scoped per study (not global).
+- Enforce permissions at:
+  - Supabase RLS layer
+  - API layer
+  - UI visibility layer
+- Never rely on frontend-only authorization.
+
+Allowed roles:
+- creator
+- reviewer
+- approver
+- auditor
+- admin
+
+All permission checks must occur server-side.
+
+---
+
+## 👥 Study Member Controls
+
+- Roles are study-scoped.
+- Permission flags must be enforced server-side.
+- RLS must reflect permission flags.
+- No frontend-only permission logic.
+
+
+---
+
+## 🤝 Collaboration Rules
+
+- All collaboration must be attributable.
+- No anonymous actions.
+- No shared mutable drafts.
+- Shared artifacts are read-only.
+- Sharing must log access events.
+- Share tokens must be hashed in DB.
+---
+
+## 📚 Study & Record Rules
+
+Study lifecycle states:
+- draft
+- active
+- locked
+- archived
+
+Locked studies:
+- No new records
+- No amendments
+- Only exports and anchor verification allowed
+
+Record lifecycle states:
+- draft
+- submitted
+- under_review
+- approved
+- locked
+- anchored
+
+Transitions must be validated server-side.
+
+---
+
+## ✍️ Electronic Signature Requirements
+
+- Signing requires re-authentication.
+- Signature must include:
+  - signer ID
+  - signer role
+  - timestamp
+  - signature intent
+  - record version hash
+- Signature is immutable once created.
+
+No silent approvals.
+
+---
+
+## 📦 Document Handling Rules
+
+- Store documents in Supabase Storage.
+- Always compute and store content hash.
+- Never trust filename alone.
+- Hash must be logged in audit event.
+
+Do not allow document replacement — require new version upload.
+
+---
+
+## ⛓ Blockchain Anchoring Rules
+
+- Anchoring only allowed for approved records.
+- Anchor only content hash.
+- Store:
+  - tx hash
+  - chain ID
+  - timestamp
+- Do not block record usage if chain RPC fails — fallback to DB anchor entry.
+
+Private keys:
+- Must only exist in server environment variables.
+- Never expose via NEXT_PUBLIC.
+- Never log private key.
+
+---
+
+## 🛑 Prohibited Changes
+
+Cursor must NOT:
+
+- Introduce direct UPDATE or DELETE on audit_events.
+- Introduce inline record edits.
+- Add blockchain storage of raw content.
+- Add client-side-only permission checks.
+- Claim regulatory compliance in code comments or UI.
+- Introduce PHI handling logic.
+
+---
+
+## 🧾 Logging Requirements
+
+Every meaningful action must produce an audit event:
+- record_created
+- record_amended
+- record_submitted
+- record_approved
+- record_rejected
+- signature_created
+- document_uploaded
+- blockchain_anchored
+- role_assigned
+- role_revoked
+- ai_analysis_performed
+
+---
+
+## 📤 Sharing Constraints
+
+- Shared records are version-specific.
+- Shared links must support expiration.
+- No amendment via share link.
+- No recursive sharing.
+
+Private keys must never appear in logs or responses.
+
+---
+
+## 🧩 Design Philosophy
+
+This is not a collaboration app.
+This is not a generic document manager.
+This is a verifiable research integrity system.
+
+All new features must strengthen:
+- Traceability
+- Immutability
+- Attribution
+- Transparency
+- Long-term verifiability
+
+If a feature weakens integrity guarantees, it must be rejected.
+
+---
+
+## 📈 Future Expansion Guardrails
+
+The system should remain extensible for:
+- Clinical trial workflows
+- PQC signature algorithms
+- Merkle batch anchoring
+- Risk-based AI monitoring
+- Multi-institution federation
+
+But MVP scope must remain controlled.
+
+---
+
+# End of Rules

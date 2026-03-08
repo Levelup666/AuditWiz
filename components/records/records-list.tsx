@@ -25,8 +25,11 @@ export default async function RecordsList({ studyId }: RecordsListProps) {
 
   if (!records || records.length === 0) {
     return (
-      <div className="py-12 text-center">
+      <div className="flex flex-col items-center justify-center gap-4 py-12 text-center">
         <p className="text-gray-500">No records yet. Create your first record to get started.</p>
+        <Link href={`/studies/${studyId}/records/new`}>
+          <Button size="sm">Create your first record</Button>
+        </Link>
       </div>
     )
   }

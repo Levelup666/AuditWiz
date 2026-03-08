@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { Badge } from '@/components/ui/badge'
+import OrcidBadge from '@/components/profile/orcid-badge'
 
 interface RecordSignaturesProps {
   recordId: string
@@ -20,6 +21,19 @@ export default async function RecordSignatures({ recordId, recordVersion }: Reco
     return <div className="text-sm text-gray-500">No signatures for this version</div>
   }
 
+  const signerIds = [...new Set((signatures as any[]).map((s) => s.signer_id))]
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, orcid_id, orcid_verified')
+    .in('id', signerIds)
+  const profileByUser = (profiles ?? []).reduce(
+    (acc, p) => {
+      acc[p.id] = p
+      return acc
+    },
+    {} as Record<string, { id: string; orcid_id: string | null; orcid_verified: boolean }>
+  )
+
   const getIntentBadge = (intent: string) => {
     const styles = {
       review: 'bg-blue-100 text-blue-800',
@@ -36,14 +50,23 @@ export default async function RecordSignatures({ recordId, recordVersion }: Reco
 
   return (
     <div className="space-y-4">
-      {signatures.map((sig: any) => (
+      {signatures.map((sig: any) => {
+        const profile = profileByUser[sig.signer_id]
+        return (
         <div key={sig.id} className="p-4 border border-gray-200 rounded-lg">
           <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {getIntentBadge(sig.intent)}
               <span className="text-sm font-medium">
                 {sig.signer?.email || 'Unknown'}
               </span>
+              {profile?.orcid_id && (
+                <OrcidBadge
+                  orcidId={profile.orcid_id}
+                  verified={profile.orcid_verified}
+                  showId
+                />
+              )}
             </div>
             <span className="text-xs text-gray-500">
               {new Date(sig.signed_at).toLocaleString()}
@@ -58,7 +81,8 @@ export default async function RecordSignatures({ recordId, recordVersion }: Reco
             </p>
           )}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

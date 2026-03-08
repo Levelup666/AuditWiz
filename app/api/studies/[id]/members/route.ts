@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canManageStudyMembers } from '@/lib/supabase/permissions'
+import { createAuditEvent } from '@/lib/supabase/audit'
+import { generateHash } from '@/lib/crypto'
+
+const VALID_ROLES = ['creator', 'reviewer', 'approver', 'auditor', 'admin'] as const
+
+function permissionFlagsForRole(role: string) {
+  return {
+    can_view: true,
+    can_comment: true,
+    can_review: ['reviewer', 'approver', 'auditor', 'admin'].includes(role),
+    can_approve: ['approver', 'admin'].includes(role),
+    can_share: ['approver', 'admin'].includes(role),
+  }
+}
 
 export async function GET(
   request: NextRequest,
@@ -24,7 +38,7 @@ export async function GET(
 
   const { data: members, error } = await supabase
     .from('study_members')
-    .select('id, user_id, role, granted_at, granted_by')
+    .select('id, user_id, role, granted_at, granted_by, can_view, can_comment, can_review, can_approve, can_share')
     .eq('study_id', studyId)
     .is('revoked_at', null)
     .order('granted_at', { ascending: false })
@@ -35,6 +49,7 @@ export async function GET(
 
   const admin = createAdminClient()
   const emails: Record<string, string> = {}
+  const orcidIds: Record<string, string> = {}
   for (const m of members || []) {
     try {
       const { data: u } = await admin.auth.admin.getUserById(m.user_id)
@@ -42,11 +57,14 @@ export async function GET(
     } catch {
       emails[m.user_id] = m.user_id.slice(0, 8) + '…'
     }
+    const { data: profile } = await supabase.from('profiles').select('orcid_id').eq('id', m.user_id).maybeSingle()
+    if (profile?.orcid_id) orcidIds[m.user_id] = profile.orcid_id
   }
 
   const withEmails = (members || []).map((m) => ({
     ...m,
     email: emails[m.user_id] ?? m.user_id.slice(0, 8) + '…',
+    orcid_id: orcidIds[m.user_id] ?? null,
   }))
 
   return NextResponse.json(withEmails)
@@ -71,25 +89,135 @@ export async function POST(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const body = await request.json()
-  const { email, role } = body as { email?: string; role?: string }
+  const body = await request.json().catch(() => ({}))
+  const { email, orcid_id: orcidIdRaw, role } = body as {
+    email?: string
+    orcid_id?: string
+    role?: string
+  }
 
-  if (!email?.trim() || !role) {
+  const emailTrim = email?.trim()
+  const orcidId =
+    orcidIdRaw != null && String(orcidIdRaw).trim() !== ''
+      ? String(orcidIdRaw).trim().replace(/-/g, '').replace(/(\d{4})(\d{4})(\d{4})(\d{3}[\dX])/i, '$1-$2-$3-$4')
+      : null
+
+  if ((!emailTrim && !orcidId) || !role) {
     return NextResponse.json(
-      { error: 'email and role are required' },
+      { error: 'Either email or orcid_id is required, and role is required' },
       { status: 400 }
     )
   }
 
-  const validRoles = ['creator', 'reviewer', 'approver', 'auditor', 'admin']
-  if (!validRoles.includes(role)) {
+  if (!VALID_ROLES.includes(role as any)) {
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
   }
 
+  const flags = permissionFlagsForRole(role)
+
+  // Invite by ORCID: resolve user from user_identities
+  if (orcidId) {
+    const { data: identity } = await supabase
+      .from('user_identities')
+      .select('user_id')
+      .eq('provider', 'orcid')
+      .eq('provider_id', orcidId)
+      .is('revoked_at', null)
+      .maybeSingle()
+
+    if (identity) {
+      const { error: insertError } = await supabase.from('study_members').insert({
+        study_id: studyId,
+        user_id: identity.user_id,
+        role,
+        granted_by: user.id,
+        ...flags,
+      })
+
+      if (insertError) {
+        if (insertError.code === '23505') {
+          return NextResponse.json(
+            { error: 'User is already a member of this study' },
+            { status: 409 }
+          )
+        }
+        return NextResponse.json({ error: insertError.message }, { status: 500 })
+      }
+
+      const stateHash = await generateHash({
+        study_id: studyId,
+        user_id: identity.user_id,
+        role,
+        granted_by: user.id,
+      })
+      await createAuditEvent(
+        studyId,
+        user.id,
+        'study_member_invited',
+        'study_member',
+        identity.user_id,
+        null,
+        stateHash,
+        { role, orcid_id: orcidId }
+      )
+      return NextResponse.json({ success: true })
+    }
+
+    // ORCID not registered: create pending invitation (require matching ORCID login to accept)
+    const expiresAt = new Date()
+    expiresAt.setDate(expiresAt.getDate() + 7)
+    const { data: invite, error: inviteError } = await supabase
+      .from('study_member_invites')
+      .insert({
+        study_id: studyId,
+        orcid_id: orcidId,
+        email: emailTrim || null,
+        role,
+        invited_by: user.id,
+        expires_at: expiresAt.toISOString(),
+      })
+      .select('id')
+      .single()
+
+    if (inviteError) {
+      return NextResponse.json({ error: inviteError.message }, { status: 500 })
+    }
+
+    const stateHash = await generateHash({
+      study_id: studyId,
+      invite_id: invite.id,
+      orcid_id: orcidId,
+      role,
+    })
+    await createAuditEvent(
+      studyId,
+      user.id,
+      'study_member_invited',
+      'study_member_invite',
+      invite.id,
+      null,
+      stateHash,
+      { role, orcid_id: orcidId, pending: true }
+    )
+    return NextResponse.json({
+      success: true,
+      pending: true,
+      message:
+        'Invitation created. They must sign in with this ORCID to accept.',
+    })
+  }
+
+  // Email-based invite (existing behavior)
+  if (!emailTrim) {
+    return NextResponse.json(
+      { error: 'Email is required for email-based invite' },
+      { status: 400 }
+    )
+  }
   const admin = createAdminClient()
   const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 })
   const found = list?.users?.find(
-    (u) => u.email?.toLowerCase() === email.trim().toLowerCase()
+    (u) => u.email?.toLowerCase() === emailTrim.toLowerCase()
   )
 
   if (!found) {
@@ -104,6 +232,7 @@ export async function POST(
     user_id: found.id,
     role,
     granted_by: user.id,
+    ...flags,
   })
 
   if (insertError) {
@@ -115,6 +244,23 @@ export async function POST(
     }
     return NextResponse.json({ error: insertError.message }, { status: 500 })
   }
+
+  const stateHash = await generateHash({
+    study_id: studyId,
+    user_id: found.id,
+    role,
+    granted_by: user.id,
+  })
+  await createAuditEvent(
+    studyId,
+    user.id,
+    'study_member_invited',
+    'study_member',
+    found.id,
+    null,
+    stateHash,
+    { role, email: emailTrim }
+  )
 
   return NextResponse.json({ success: true })
 }

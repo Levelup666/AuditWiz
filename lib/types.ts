@@ -12,9 +12,12 @@ export type SignatureIntent = 'review' | 'approval' | 'amendment' | 'rejection';
 export type AuditActionType =
   | 'study_created' | 'study_updated' | 'study_deleted'
   | 'member_added' | 'member_removed' | 'member_role_changed'
-  | 'record_created' | 'record_submitted' | 'record_amended' | 'record_rejected'
+  | 'study_member_invited' | 'study_member_joined'
+  | 'record_created' | 'record_submitted' | 'record_amended' | 'record_rejected' | 'record_approved'
   | 'document_uploaded' | 'document_deleted'
   | 'signature_added' | 'signature_revoked'
+  | 'identity_linked'
+  | 'share_created' | 'share_accessed'
   | 'ai_action' | 'system_action'
   | 'blockchain_anchored';
 
@@ -27,6 +30,9 @@ export interface Study {
   created_at: string;
   updated_at: string;
   metadata: { [key: string]: any };
+  required_approval_count?: number;
+  require_review_before_approval?: boolean;
+  allow_creator_approval?: boolean;
 }
 
 export interface StudyMember {
@@ -37,6 +43,41 @@ export interface StudyMember {
   granted_by: string | null;
   granted_at: string;
   revoked_at: string | null;
+  can_view: boolean;
+  can_comment: boolean;
+  can_review: boolean;
+  can_approve: boolean;
+  can_share: boolean;
+}
+
+export interface Profile {
+  id: string;
+  orcid_id: string | null;
+  orcid_verified: boolean;
+  orcid_affiliation_snapshot: string | null;
+  display_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserIdentity {
+  id: string;
+  user_id: string;
+  provider: string;
+  provider_id: string;
+  verified: boolean;
+  linked_at: string;
+  revoked_at: string | null;
+}
+
+export interface SharedArtifact {
+  id: string;
+  record_version_id: string;
+  created_by: string;
+  permission_level: 'read';
+  expires_at: string;
+  access_token_hash: string;
+  created_at: string;
 }
 
 export interface Record {
@@ -107,6 +148,9 @@ export interface BlockchainAnchor {
 
 // System actor identifier for AI/automated actions
 export const SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
+
+// Custom field type for record form (add-your-own fields)
+export type CustomFieldType = 'text' | 'integer' | 'number' | 'date' | 'boolean';
 
 // Helper type for system action metadata
 export interface SystemActionMetadata {

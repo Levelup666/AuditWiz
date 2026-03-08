@@ -21,6 +21,12 @@ interface Member {
   granted_at: string
   granted_by: string | null
   email: string
+  orcid_id?: string | null
+  can_view?: boolean
+  can_comment?: boolean
+  can_review?: boolean
+  can_approve?: boolean
+  can_share?: boolean
 }
 
 interface StudyMembersManagerProps {
@@ -32,10 +38,12 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [email, setEmail] = useState('')
+  const [orcidId, setOrcidId] = useState('')
   const [role, setRole] = useState('reviewer')
   const [addLoading, setAddLoading] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
   const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [addSuccess, setAddSuccess] = useState<string | null>(null)
 
   const fetchMembers = async () => {
     setLoading(true)
@@ -59,18 +67,28 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
     setAddError(null)
-    if (!email.trim()) return
+    setAddSuccess(null)
+    const emailTrim = email.trim()
+    const orcidTrim = orcidId.trim()
+    if (!emailTrim && !orcidTrim) return
     setAddLoading(true)
     try {
+      const body: { email?: string; orcid_id?: string; role: string } = { role }
+      if (orcidTrim) body.orcid_id = orcidTrim
+      if (emailTrim) body.email = emailTrim
       const res = await fetch(`/api/studies/${studyId}/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), role }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || res.statusText)
       setEmail('')
+      setOrcidId('')
       setRole('reviewer')
+      if (data.pending) {
+        setAddSuccess(data.message ?? 'Pending invite created.')
+      }
       fetchMembers()
     } catch (e) {
       setAddError(e instanceof Error ? e.message : 'Failed to add member')
@@ -121,6 +139,17 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
             className="mt-1"
           />
         </div>
+        <div className="flex-1 min-w-[200px]">
+          <Label htmlFor="member-orcid">ORCID ID (optional)</Label>
+          <Input
+            id="member-orcid"
+            type="text"
+            value={orcidId}
+            onChange={(e) => setOrcidId(e.target.value)}
+            placeholder="0000-0001-2345-6789"
+            className="mt-1"
+          />
+        </div>
         <div className="w-[140px]">
           <Label htmlFor="member-role">Role</Label>
           <select
@@ -142,12 +171,16 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
         {addError && (
           <p className="text-sm text-red-600 w-full">{addError}</p>
         )}
+        {addSuccess && (
+          <p className="text-sm text-green-600 w-full">{addSuccess}</p>
+        )}
       </form>
 
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Email</TableHead>
+            <TableHead>ORCID</TableHead>
             <TableHead>Role</TableHead>
             <TableHead>Added</TableHead>
             <TableHead className="text-right">Actions</TableHead>
@@ -157,6 +190,7 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
           {members.map((m) => (
             <TableRow key={m.id}>
               <TableCell className="font-medium">{m.email}</TableCell>
+              <TableCell className="text-sm text-gray-600">{m.orcid_id ?? '—'}</TableCell>
               <TableCell>
                 <Badge variant="outline">{m.role}</Badge>
               </TableCell>

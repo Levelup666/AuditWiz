@@ -14,12 +14,13 @@ export default async function DashboardPage() {
   if (!user) {
     redirect('/auth/signin')
   }
+  const userId = user!.id
 
   // Get some quick stats
   const { count: studiesCount } = await supabase
     .from('studies')
     .select('*', { count: 'exact', head: true })
-    .eq('created_by', user.id)
+    .eq('created_by', userId)
 
   const { count: recordsCount } = await supabase
     .from('records')

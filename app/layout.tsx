@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import FloatingNav from "@/components/navigation/floating-nav";
 
 export const metadata: Metadata = {
   title: "AuditWiz - Clinical-Ready Research Platform",
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <FloatingNav />
+        {children}
+      </body>
     </html>
   );
 }

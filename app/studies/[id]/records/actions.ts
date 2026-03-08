@@ -15,8 +15,9 @@ export async function createRecord(studyId: string, formData: FormData) {
   if (!user) {
     redirect('/auth/signin')
   }
+  const userId = user!.id
 
-  const allowed = await canCreateRecord(user.id, studyId)
+  const allowed = await canCreateRecord(userId, studyId)
   if (!allowed) {
     return { error: 'You do not have permission to create records in this study' }
   }
@@ -47,7 +48,7 @@ export async function createRecord(studyId: string, formData: FormData) {
       version: 1,
       previous_version_id: null,
       status: 'draft',
-      created_by: user.id,
+      created_by: userId,
       content,
       content_hash: contentHash,
       amendment_reason: null,
@@ -60,5 +61,5 @@ export async function createRecord(studyId: string, formData: FormData) {
   }
 
   revalidatePath(`/studies/${studyId}`)
-  redirect(`/studies/${studyId}/records/${record.id}`)
+  redirect(`/studies/${studyId}/records/${record.id}?created=1`)
 }

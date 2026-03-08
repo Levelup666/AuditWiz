@@ -58,8 +58,8 @@ flowchart LR
 
 **1. Add missing routes and forms**
 
-- `**/studies/new**`: Page with form (title, description, status). On submit: insert into `studies`, insert current user into `study_members` as `creator`/`admin`, optionally call `create_audit_event` for `study_created` (or rely on DB trigger if you add one for studies).
-- `**/studies/[id]/records/new**`: Page with form for `record_number` and initial `content` (e.g. JSON or structured fields). Compute `content_hash` (reuse [lib/crypto.ts](lib/crypto.ts)), insert into `records`. Trigger already creates `record_created` audit event.
+- `**/studies/new`**: Page with form (title, description, status). On submit: insert into `studies`, insert current user into `study_members` as `creator`/`admin`, optionally call `create_audit_event` for `study_created` (or rely on DB trigger if you add one for studies).
+- `**/studies/[id]/records/new`**: Page with form for `record_number` and initial `content` (e.g. JSON or structured fields). Compute `content_hash` (reuse [lib/crypto.ts](lib/crypto.ts)), insert into `records`. Trigger already creates `record_created` audit event.
 
 **2. Record status transitions (aligned with immutability)**
 

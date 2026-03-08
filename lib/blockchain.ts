@@ -49,9 +49,9 @@ export async function anchorRecordToBlockchain(
 
     const hash = await client.sendTransaction({
       to: account.address,
-      value: 0n,
+      value: BigInt(0),
       data: hashBytes,
-      gas: 100000n,
+      gas: BigInt(100000),
     })
 
     const { createPublicClient } = await import('viem')

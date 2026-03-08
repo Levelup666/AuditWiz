@@ -6,12 +6,11 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import {
-  FileText,
   FolderOpen,
-  List,
   LogOut,
   Home,
   Activity,
+  User,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -19,6 +18,7 @@ const navigation = [
   { name: 'Studies', href: '/studies', icon: FolderOpen },
   { name: 'Dashboard', href: '/dashboard', icon: Home },
   { name: 'Audit Trail', href: '/dashboard/audit-trail', icon: Activity },
+  { name: 'Profile', href: '/profile', icon: User },
 ]
 
 export default function Sidebar() {

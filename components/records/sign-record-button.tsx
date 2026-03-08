@@ -76,37 +76,26 @@ export default function SignRecordButton({ studyId, record }: SignRecordButtonPr
         timestamp
       )
 
-      // Get IP and user agent for audit trail
       const ipAddress = await fetch('https://api.ipify.org?format=json')
         .then(res => res.json())
         .then(data => data.ip)
         .catch(() => null)
-
       const userAgent = typeof window !== 'undefined' ? window.navigator.userAgent : null
 
-      // Insert signature
-      const { error: insertError } = await supabase
-        .from('signatures')
-        .insert({
-          record_id: record.id,
-          record_version: record.version,
-          signer_id: user.id,
+      const res = await fetch(`/api/records/${record.id}/sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           intent,
           signature_hash: signatureHash,
           ip_address: ipAddress,
           user_agent: userAgent,
-        })
+        }),
+      })
 
-      if (insertError) {
-        throw new Error(insertError.message)
-      }
-
-      // Update record status if approved
-      if (intent === 'approval') {
-        await supabase
-          .from('records')
-          .update({ status: 'approved' })
-          .eq('id', record.id)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error ?? 'Failed to create signature')
       }
 
       setOpen(false)

@@ -4,8 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import RecordsList from '@/components/records/records-list'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
-import { Plus } from 'lucide-react'
+import { Plus, Settings } from 'lucide-react'
 import { canCreateRecord, canManageStudyMembers } from '@/lib/supabase/permissions'
+import { Badge } from '@/components/ui/badge'
 
 interface StudyPageProps {
   params: Promise<{ id: string }>
@@ -44,12 +45,29 @@ export default async function StudyPage({ params }: StudyPageProps) {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">{study.title}</h1>
           <p className="mt-2 text-gray-600">{study.description}</p>
+          {study.required_approval_count != null && study.required_approval_count > 1 && (
+            <p className="mt-2 text-sm text-gray-500">
+              <Badge variant="secondary" className="font-normal">
+                {study.required_approval_count} approvals required
+              </Badge>
+            </p>
+          )}
         </div>
-        {canManageMembers && (
-          <Link href={`/studies/${id}/members`}>
-            <Button variant="outline">Manage Members</Button>
-          </Link>
-        )}
+        <div className="flex gap-2">
+          {canManageMembers && (
+            <>
+              <Link href={`/studies/${id}/settings`}>
+                <Button variant="outline">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </Button>
+              </Link>
+              <Link href={`/studies/${id}/members`}>
+                <Button variant="outline">Manage Members</Button>
+              </Link>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center justify-between">

@@ -16,6 +16,7 @@ export async function createStudy(formData: FormData) {
   if (!user) {
     redirect('/auth/signin')
   }
+  const userId = user!.id
 
   const title = formData.get('title') as string
   const description = (formData.get('description') as string) || null
@@ -31,7 +32,7 @@ export async function createStudy(formData: FormData) {
       title: title.trim(),
       description: description?.trim() || null,
       status,
-      created_by: user.id,
+      created_by: userId,
     })
     .select('id')
     .single()
@@ -42,9 +43,9 @@ export async function createStudy(formData: FormData) {
 
   const { error: memberError } = await supabase.from('study_members').insert({
     study_id: study.id,
-    user_id: user.id,
+    user_id: userId,
     role: 'admin',
-    granted_by: user.id,
+    granted_by: userId,
   })
 
   if (memberError) {
@@ -60,7 +61,7 @@ export async function createStudy(formData: FormData) {
 
   await createAuditEvent(
     study.id,
-    user.id,
+    userId,
     'study_created',
     'study',
     study.id,
