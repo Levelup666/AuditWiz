@@ -8,9 +8,9 @@ This document explains the architectural decisions and design patterns used in A
 
 ### 1. Immutability
 
-**Records are Immutable**
-- Records table: No UPDATE allowed on content after creation
-- Amendments create new `records` rows with incremented `version`
+**Records are Immutable (after submission)**
+- Records table: Content can be updated only when `status = 'draft'`
+- Once submitted, content is immutable; amendments create new `records` rows with incremented `version`
 - `previous_version_id` links versions in a chain
 - Content hash (SHA-256) ensures integrity
 
@@ -49,6 +49,13 @@ This document explains the architectural decisions and design patterns used in A
 
 ### 4. Versioning & Amendments
 
+**Draft Records**
+- Draft records can be saved and edited in-place before submission
+- Each draft save updates `content`, `content_hash`, `last_edited_at`, `last_edited_by`
+- Every draft save emits `record_draft_updated` audit event with previous/new state hashes
+- RLS allows UPDATE only when `status = 'draft'` and user has creator role
+- After submission, content is immutable; use amendments for changes
+
 **Version Chain**
 - Records linked via `previous_version_id`
 - Version history viewable via `record_version_history` view
@@ -59,6 +66,7 @@ This document explains the architectural decisions and design patterns used in A
 - Each version has `content_hash` (SHA-256 of content JSON)
 - Hashes verified when viewing records
 - Previous/next state hashes stored in audit events
+- Draft saves recompute content_hash; each save is fully audited
 
 ### 5. Electronic Signatures
 

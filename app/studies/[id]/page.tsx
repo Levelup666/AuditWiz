@@ -7,13 +7,16 @@ import Link from 'next/link'
 import { Plus, Settings } from 'lucide-react'
 import { canCreateRecord, canManageStudyMembers } from '@/lib/supabase/permissions'
 import { Badge } from '@/components/ui/badge'
+import StudyDocumentationCard from '@/components/studies/study-documentation-card'
 
 interface StudyPageProps {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ status?: string; sort?: string }>
 }
 
-export default async function StudyPage({ params }: StudyPageProps) {
+export default async function StudyPage({ params, searchParams }: StudyPageProps) {
   const { id } = await params
+  const sp = await searchParams
   const supabase = await createClient()
   const {
     data: { user },
@@ -70,6 +73,12 @@ export default async function StudyPage({ params }: StudyPageProps) {
         </div>
       </div>
 
+      <StudyDocumentationCard
+        studyId={id}
+        documentation={study.documentation ?? null}
+        canEdit={canCreate}
+      />
+
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold">Records</h2>
         {canCreate && (
@@ -90,7 +99,7 @@ export default async function StudyPage({ params }: StudyPageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <RecordsList studyId={id} />
+          <RecordsList studyId={id} statusFilter={sp?.status} sortBy={sp?.sort} />
         </CardContent>
       </Card>
     </div>

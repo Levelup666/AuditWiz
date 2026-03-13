@@ -21,9 +21,9 @@
 
 ## 🔐 Core Architectural Principles (Non-Negotiable)
 
-1. No record is ever overwritten.
-   - Updates must create new versions.
-   - Use amendment model, not inline edits.
+1. No record is ever overwritten (after submission).
+   - Draft records may be updated in-place; each save emits record_draft_updated.
+   - After submission, updates must create new versions (amendment model).
 
 2. All significant actions must emit an audit event.
    - Insert-only audit ledger.
@@ -182,7 +182,7 @@ Private keys:
 Cursor must NOT:
 
 - Introduce direct UPDATE or DELETE on audit_events.
-- Introduce inline record edits.
+- Introduce inline record edits for non-draft records (draft edits are allowed and must emit record_draft_updated).
 - Add blockchain storage of raw content.
 - Add client-side-only permission checks.
 - Claim regulatory compliance in code comments or UI.
@@ -194,6 +194,7 @@ Cursor must NOT:
 
 Every meaningful action must produce an audit event:
 - record_created
+- record_draft_updated (draft saves; includes last_edited_by, last_edited_at)
 - record_amended
 - record_submitted
 - record_approved

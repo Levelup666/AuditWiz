@@ -14,6 +14,7 @@ export type AuditActionType =
   | 'member_added' | 'member_removed' | 'member_role_changed'
   | 'study_member_invited' | 'study_member_joined'
   | 'record_created' | 'record_submitted' | 'record_amended' | 'record_rejected' | 'record_approved'
+  | 'record_draft_updated'
   | 'document_uploaded' | 'document_deleted'
   | 'signature_added' | 'signature_revoked'
   | 'identity_linked'
@@ -25,6 +26,7 @@ export interface Study {
   id: string;
   title: string;
   description: string | null;
+  documentation?: string | null;
   status: StudyStatus;
   created_by: string;
   created_at: string;
@@ -92,6 +94,8 @@ export interface Record {
   content: { [key: string]: any };
   content_hash: string;
   amendment_reason: string | null;
+  last_edited_at?: string | null;
+  last_edited_by?: string | null;
 }
 
 export interface Document {

@@ -4,8 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createSystemAuditEvent } from '@/lib/supabase/audit'
-import { generateHash } from '@/lib/crypto'
-import { SYSTEM_ACTOR_ID } from '@/lib/types'
+import { canAuditRecord } from '@/lib/supabase/permissions'
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,6 +31,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
+      )
+    }
+
+    // Verify user has audit access to the study (auditor or admin)
+    const allowed = await canAuditRecord(user.id, studyId)
+    if (!allowed) {
+      return NextResponse.json(
+        { error: 'You do not have permission to log system actions for this study' },
+        { status: 403 }
       )
     }
 

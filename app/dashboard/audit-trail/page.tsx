@@ -31,6 +31,7 @@ export default async function AuditTrailPage({
       member_removed: 'bg-red-100 text-red-800',
       member_role_changed: 'bg-yellow-100 text-yellow-800',
       record_created: 'bg-blue-100 text-blue-800',
+      record_draft_updated: 'bg-slate-100 text-slate-800',
       record_amended: 'bg-purple-100 text-purple-800',
       record_submitted: 'bg-yellow-100 text-yellow-800',
       record_rejected: 'bg-red-100 text-red-800',

@@ -15,6 +15,7 @@ import RecordDocuments from '@/components/records/record-documents'
 import AnchorRecordButton from '@/components/records/anchor-record-button'
 import OrcidBadge from '@/components/profile/orcid-badge'
 import RecordCreatedBanner from '@/components/records/record-created-banner'
+import RecordDraftForm from '@/components/records/record-draft-form'
 
 interface RecordPageProps {
   params: Promise<{ id: string; recordId: string }>
@@ -56,6 +57,16 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
     .eq('id', record.created_by)
     .maybeSingle()
 
+  const { data: lastEditorProfile } = record.last_edited_by
+    ? await supabase
+        .from('profiles')
+        .select('display_name')
+        .eq('id', record.last_edited_by)
+        .maybeSingle()
+    : { data: null }
+
+  const isDraftEditable = record.status === 'draft' && canAmend
+
   return (
     <div className="space-y-6">
       <RecordCreatedBanner show={sp?.created === '1'} />
@@ -82,6 +93,12 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
           {record.amendment_reason && (
             <p className="mt-1 text-sm text-gray-600">
               <strong>Amendment Reason:</strong> {record.amendment_reason}
+            </p>
+          )}
+          {record.last_edited_at && record.last_edited_by && (
+            <p className="mt-1 text-sm text-gray-500">
+              Last edited by {lastEditorProfile?.display_name ?? 'a team member'} at{' '}
+              {new Date(record.last_edited_at).toLocaleString()}
             </p>
           )}
         </div>
@@ -120,15 +137,29 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
         <Card>
           <CardHeader>
             <CardTitle>Record Content</CardTitle>
-            <CardDescription>Current version content</CardDescription>
+            <CardDescription>
+              {isDraftEditable
+                ? 'Edit and save your draft. Changes are logged with your identity.'
+                : 'Current version content'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <pre className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded">
-              {JSON.stringify(record.content, null, 2)}
-            </pre>
-            <p className="mt-4 text-xs text-gray-500">
-              Content Hash: {record.content_hash}
-            </p>
+            {isDraftEditable ? (
+              <RecordDraftForm
+                studyId={id}
+                recordId={record.id}
+                initialContent={record.content ?? {}}
+              />
+            ) : (
+              <>
+                <pre className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded">
+                  {JSON.stringify(record.content, null, 2)}
+                </pre>
+                <p className="mt-4 text-xs text-gray-500">
+                  Content Hash: {record.content_hash}
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
 

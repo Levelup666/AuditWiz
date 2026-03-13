@@ -5,7 +5,11 @@ import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import StudiesList from '@/components/studies/studies-list'
 
-export default async function StudiesPage() {
+interface StudiesPageProps {
+  searchParams: Promise<{ status?: string }>
+}
+
+export default async function StudiesPage({ searchParams }: StudiesPageProps) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -14,6 +18,8 @@ export default async function StudiesPage() {
   if (!user) {
     return null
   }
+
+  const sp = await searchParams
 
   return (
     <div className="space-y-6">
@@ -40,7 +46,7 @@ export default async function StudiesPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <StudiesList userId={user.id} />
+          <StudiesList userId={user.id} statusFilter={sp?.status} />
         </CardContent>
       </Card>
     </div>

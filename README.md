@@ -19,10 +19,11 @@ Research-focused auditing platform designed with clinical-ready architecture pri
 - Roles: `creator`, `reviewer`, `approver`, `auditor`, `admin`
 
 ### Immutable Records with Versioning
-- Records cannot be edited once created
+- Records cannot be edited once submitted; drafts can be saved and edited before submission
 - Amendments create new versions linked to previous versions
 - Full version history preserved
 - Content hashing for integrity verification
+- See [ARCHITECTURE.md](ARCHITECTURE.md) for draft vs amendment behavior
 
 ### Electronic Signatures
 - Cryptographically verifiable signatures
@@ -115,7 +116,13 @@ npm run dev
 1. Open a study
 2. Click "Create Record"
 3. Fill in record content
-4. Records are immutable once created
+4. Records are immutable once submitted
+
+### Saving Drafts
+1. Create a record (it starts as draft)
+2. Edit content and click "Save Draft" to persist changes
+3. Each save is logged with your identity and timestamp
+4. Submit for review when ready; after submission, content is immutable
 
 ### Amending Records
 1. Open a record
@@ -143,10 +150,22 @@ npm run dev
 - Requires authentication
 - Creates audit events with system actor
 
+## Testing
+
+Run the test suite (requires `npm install` first to install Vitest):
+
+```bash
+npm install
+npm test           # run tests once
+npm run test:watch # run tests in watch mode
+```
+
+Tests cover hash generation, signature verification, and core crypto utilities in `lib/__tests__/`.
+
 ## Security Considerations
 
 - All audit events are append-only (no UPDATE/DELETE)
-- Records are immutable (amendments create versions)
+- Records are immutable after submission (drafts can be saved; amendments create versions)
 - Electronic signatures require re-authentication
 - Study-scoped permissions enforced via RLS
 - Content hashing for integrity verification
