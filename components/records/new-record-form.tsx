@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/lib/toast'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -77,7 +78,6 @@ interface NewRecordFormProps {
 }
 
 export default function NewRecordForm({ studyId }: NewRecordFormProps) {
-  const [error, setError] = useState<string | null>(null)
   const [customFields, setCustomFields] = useState<CustomField[]>([])
 
   function addCustomField() {
@@ -101,7 +101,6 @@ export default function NewRecordForm({ studyId }: NewRecordFormProps) {
   }
 
   async function handleSubmit(formData: FormData) {
-    setError(null)
     const title = (formData.get('title') as string)?.trim() ?? ''
     const summary = (formData.get('summary') as string)?.trim() ?? ''
     const notes = (formData.get('notes') as string)?.trim() ?? ''
@@ -112,17 +111,14 @@ export default function NewRecordForm({ studyId }: NewRecordFormProps) {
     fd.set('content', JSON.stringify(content))
     const result = await createRecord(studyId, fd)
     if (result?.error) {
-      setError(result.error)
+      toast.error('Create record failed', result.error)
+    } else {
+      toast.success('Record created successfully')
     }
   }
 
   return (
     <form action={handleSubmit} className="max-w-2xl space-y-6">
-      {error && (
-        <div className="rounded-md bg-red-50 p-4">
-          <p className="text-sm text-red-800">{error}</p>
-        </div>
-      )}
       <div className="space-y-4">
         <div>
           <Label htmlFor="record_number">Record Number *</Label>

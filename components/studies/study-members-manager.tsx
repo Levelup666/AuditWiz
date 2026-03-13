@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/lib/toast'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -13,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { Loader2 } from 'lucide-react'
 
 interface Member {
   id: string
@@ -36,25 +38,21 @@ interface StudyMembersManagerProps {
 export default function StudyMembersManager({ studyId }: StudyMembersManagerProps) {
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const [orcidId, setOrcidId] = useState('')
   const [role, setRole] = useState('reviewer')
   const [addLoading, setAddLoading] = useState(false)
-  const [addError, setAddError] = useState<string | null>(null)
   const [revokingId, setRevokingId] = useState<string | null>(null)
-  const [addSuccess, setAddSuccess] = useState<string | null>(null)
 
   const fetchMembers = async () => {
     setLoading(true)
-    setError(null)
     try {
       const res = await fetch(`/api/studies/${studyId}/members`)
       if (!res.ok) throw new Error(await res.json().then((b) => b.error || res.statusText))
       const data = await res.json()
       setMembers(data)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load members')
+      toast.error('Load failed', e instanceof Error ? e.message : 'Failed to load members')
     } finally {
       setLoading(false)
     }
@@ -66,8 +64,6 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
-    setAddError(null)
-    setAddSuccess(null)
     const emailTrim = email.trim()
     const orcidTrim = orcidId.trim()
     if (!emailTrim && !orcidTrim) return
@@ -86,12 +82,10 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
       setEmail('')
       setOrcidId('')
       setRole('reviewer')
-      if (data.pending) {
-        setAddSuccess(data.message ?? 'Pending invite created.')
-      }
+      toast.success(data.pending ? (data.message ?? 'Pending invite created') : 'Member added')
       fetchMembers()
     } catch (e) {
-      setAddError(e instanceof Error ? e.message : 'Failed to add member')
+      toast.error('Add failed', e instanceof Error ? e.message : 'Failed to add member')
     } finally {
       setAddLoading(false)
     }
@@ -107,26 +101,26 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || res.statusText)
+      toast.success('Member revoked')
       fetchMembers()
     } catch {
-      setError('Failed to revoke member')
+      toast.error('Revoke failed', 'Failed to revoke member')
     } finally {
       setRevokingId(null)
     }
   }
 
   if (loading) {
-    return <p className="text-gray-500">Loading members…</p>
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading members…
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
-      {error && (
-        <div className="rounded-md bg-red-50 p-3">
-          <p className="text-sm text-red-800">{error}</p>
-        </div>
-      )}
-
       <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-4 rounded-lg border p-4">
         <div className="flex-1 min-w-[200px]">
           <Label htmlFor="member-email">Email</Label>
@@ -168,12 +162,6 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
         <Button type="submit" disabled={addLoading}>
           {addLoading ? 'Adding…' : 'Add Member'}
         </Button>
-        {addError && (
-          <p className="text-sm text-red-600 w-full">{addError}</p>
-        )}
-        {addSuccess && (
-          <p className="text-sm text-green-600 w-full">{addSuccess}</p>
-        )}
       </form>
 
       <Table>

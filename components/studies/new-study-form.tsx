@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/lib/toast'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -18,23 +18,17 @@ function SubmitButton() {
 }
 
 export default function NewStudyForm() {
-  const [error, setError] = useState<string | null>(null)
-
   async function handleSubmit(formData: FormData) {
-    setError(null)
     const result = await createStudy(formData)
     if (result?.error) {
-      setError(result.error)
+      toast.error('Create study failed', result.error)
+    } else {
+      toast.success('Study created successfully')
     }
   }
 
   return (
     <form action={handleSubmit} className="space-y-6 max-w-md">
-      {error && (
-        <div className="rounded-md bg-red-50 p-4">
-          <p className="text-sm text-red-800">{error}</p>
-        </div>
-      )}
       <div className="space-y-4">
         <div>
           <Label htmlFor="title">Title *</Label>

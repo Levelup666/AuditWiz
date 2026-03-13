@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/lib/toast'
 import { Input } from '@/components/ui/input'
+import { Loader2 } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 
@@ -26,18 +28,16 @@ export default function RecordDocuments({ recordId, studyId, canUpload }: Record
   const [docs, setDocs] = useState<DocumentRow[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   const fetchDocs = async () => {
     setLoading(true)
-    setError(null)
     try {
       const res = await fetch(`/api/records/${recordId}/documents`)
       if (!res.ok) throw new Error('Failed to load documents')
       const data = await res.json()
       setDocs(data)
     } catch {
-      setError('Failed to load documents')
+      toast.error('Load failed', 'Failed to load documents')
     } finally {
       setLoading(false)
     }
@@ -52,7 +52,6 @@ export default function RecordDocuments({ recordId, studyId, canUpload }: Record
     const form = e.currentTarget
     const input = form.querySelector<HTMLInputElement>('input[type="file"]')
     if (!input?.files?.length) return
-    setError(null)
     setUploading(true)
     try {
       const formData = new FormData()
@@ -64,9 +63,10 @@ export default function RecordDocuments({ recordId, studyId, canUpload }: Record
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Upload failed')
       input.value = ''
+      toast.success('Document uploaded successfully')
       fetchDocs()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Upload failed')
+      toast.error('Upload failed', e instanceof Error ? e.message : 'Upload failed')
     } finally {
       setUploading(false)
     }
@@ -79,16 +79,16 @@ export default function RecordDocuments({ recordId, studyId, canUpload }: Record
   }
 
   if (loading) {
-    return <p className="text-sm text-gray-500">Loading documents…</p>
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading documents…
+      </div>
+    )
   }
 
   return (
     <div className="space-y-4">
-      {error && (
-        <div className="rounded-md bg-red-50 p-3">
-          <p className="text-sm text-red-800">{error}</p>
-        </div>
-      )}
       {canUpload && (
         <form onSubmit={handleUpload} className="flex flex-wrap items-end gap-2">
           <div>
@@ -101,7 +101,14 @@ export default function RecordDocuments({ recordId, studyId, canUpload }: Record
             />
           </div>
           <Button type="submit" disabled={uploading}>
-            {uploading ? 'Uploading…' : 'Upload'}
+            {uploading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Uploading…
+              </>
+            ) : (
+              'Upload'
+            )}
           </Button>
         </form>
       )}

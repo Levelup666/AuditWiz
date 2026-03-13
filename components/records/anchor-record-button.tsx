@@ -3,7 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/lib/toast'
 import { Badge } from '@/components/ui/badge'
+import { Loader2 } from 'lucide-react'
 
 interface AnchorRecordButtonProps {
   recordId: string
@@ -27,7 +29,6 @@ export default function AnchorRecordButton({
   const router = useRouter()
   const [status, setStatus] = useState<AnchorStatus | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -42,7 +43,6 @@ export default function AnchorRecordButton({
   }, [recordId])
 
   const handleAnchor = async () => {
-    setError(null)
     setLoading(true)
     try {
       const res = await fetch(`/api/records/${recordId}/anchor`, { method: 'POST' })
@@ -53,9 +53,10 @@ export default function AnchorRecordButton({
         transaction_hash: data.transaction_hash,
         block_number: data.block_number,
       })
+      toast.success('Record anchored to blockchain')
       router.refresh()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Anchor failed')
+      toast.error('Anchor failed', e instanceof Error ? e.message : 'Anchor failed')
     } finally {
       setLoading(false)
     }
@@ -83,11 +84,15 @@ export default function AnchorRecordButton({
         onClick={handleAnchor}
         disabled={loading}
       >
-        {loading ? 'Anchoring…' : 'Anchor to blockchain'}
-      </Button>
-      {error && (
-        <p className="text-xs text-red-600">{error}</p>
+        {loading ? (
+        <>
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          Anchoring…
+        </>
+      ) : (
+        'Anchor to blockchain'
       )}
+      </Button>
     </div>
   )
 }

@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { createClient } from '@/lib/supabase/client'
 import { generateHash } from '@/lib/crypto'
+import { toast } from '@/lib/toast'
 
 interface AmendRecordButtonProps {
   studyId: string
@@ -29,7 +30,6 @@ export default function AmendRecordButton({ studyId, recordId, currentContent }:
   const [loading, setLoading] = useState(false)
   const [amendmentReason, setAmendmentReason] = useState('')
   const [contentJson, setContentJson] = useState('')
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (open && currentContent !== undefined) {
@@ -39,10 +39,9 @@ export default function AmendRecordButton({ studyId, recordId, currentContent }:
 
   const handleAmend = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    setError(null)
 
     if (!amendmentReason.trim()) {
-      setError('Amendment reason is required')
+      toast.error('Validation error', 'Amendment reason is required')
       return
     }
 
@@ -50,7 +49,7 @@ export default function AmendRecordButton({ studyId, recordId, currentContent }:
     try {
       newContent = JSON.parse(contentJson) as Record<string, unknown>
     } catch {
-      setError('Content must be valid JSON')
+      toast.error('Validation error', 'Content must be valid JSON')
       return
     }
 
@@ -98,10 +97,11 @@ export default function AmendRecordButton({ studyId, recordId, currentContent }:
       }
 
       setOpen(false)
+      toast.success('Amendment created successfully')
       router.refresh()
       router.push(`/studies/${studyId}/records/${newRecord.id}`)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create amendment')
+      toast.error('Amendment failed', err instanceof Error ? err.message : 'Failed to create amendment')
       setLoading(false)
     }
   }
@@ -137,11 +137,6 @@ export default function AmendRecordButton({ studyId, recordId, currentContent }:
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            {error && (
-              <div className="rounded-md bg-red-50 p-3">
-                <p className="text-sm text-red-800">{error}</p>
-              </div>
-            )}
             <div>
               <Label htmlFor="amendment-content">Amended Content (JSON) *</Label>
               <Textarea

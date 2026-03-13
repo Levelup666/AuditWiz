@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Textarea } from '@/components/ui/textarea'
 import { updateStudyDocumentation } from '@/app/studies/[id]/documentation/actions'
 import { Pencil, Save } from 'lucide-react'
+import { toast } from '@/lib/toast'
 
 function SaveButton() {
   const { pending } = useFormStatus()
@@ -31,18 +32,14 @@ export default function StudyDocumentationCard({
 }: StudyDocumentationCardProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [value, setValue] = useState(documentation ?? '')
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setError(null)
-    setSuccess(false)
     const result = await updateStudyDocumentation(studyId, value)
     if (result?.error) {
-      setError(result.error)
+      toast.error('Save failed', result.error)
     } else {
-      setSuccess(true)
+      toast.success('Documentation saved')
       setIsEditing(false)
     }
   }
@@ -64,16 +61,6 @@ export default function StudyDocumentationCard({
         )}
       </CardHeader>
       <CardContent>
-        {error && (
-          <div className="rounded-md bg-red-50 p-3 mb-4">
-            <p className="text-sm text-red-800">{error}</p>
-          </div>
-        )}
-        {success && (
-          <div className="rounded-md bg-green-50 p-3 mb-4 text-sm text-green-800">
-            Documentation saved.
-          </div>
-        )}
         {isEditing && canEdit ? (
           <form onSubmit={handleSubmit} className="space-y-4">
             <Textarea

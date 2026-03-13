@@ -2,19 +2,16 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/lib/toast'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 export default function LinkOrcidForm() {
   const [orcidId, setOrcidId] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null)
-    setSuccess(false)
     if (!orcidId.trim()) return
     setLoading(true)
     try {
@@ -28,11 +25,11 @@ export default function LinkOrcidForm() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to link ORCID')
-      setSuccess(true)
+      toast.success('ORCID linked successfully')
       setOrcidId('')
       window.dispatchEvent(new Event('profile-updated'))
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to link ORCID')
+      toast.error('Link failed', e instanceof Error ? e.message : 'Failed to link ORCID')
     } finally {
       setLoading(false)
     }
@@ -54,8 +51,6 @@ export default function LinkOrcidForm() {
       <Button type="submit" disabled={loading}>
         {loading ? 'Linking…' : 'Link ORCID'}
       </Button>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {success && <p className="text-sm text-green-600">ORCID linked successfully.</p>}
     </form>
   )
 }

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/lib/toast'
 import {
   Dialog,
   DialogContent,
@@ -33,10 +34,8 @@ export default function RecordStatusActions({
   const [rejectOpen, setRejectOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   const updateStatus = async (newStatus: string, reason?: string) => {
-    setError(null)
     setLoading(true)
     try {
       const res = await fetch(`/api/records/${recordId}/status`, {
@@ -48,9 +47,10 @@ export default function RecordStatusActions({
       if (!res.ok) throw new Error(data.error || res.statusText)
       setRejectOpen(false)
       setReason('')
+      toast.success(newStatus === 'rejected' ? 'Record rejected' : 'Record submitted for review')
       router.refresh()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to update status')
+      toast.error('Update failed', e instanceof Error ? e.message : 'Failed to update status')
     } finally {
       setLoading(false)
     }
@@ -81,11 +81,6 @@ export default function RecordStatusActions({
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
-                {error && (
-                  <div className="rounded-md bg-red-50 p-3">
-                    <p className="text-sm text-red-800">{error}</p>
-                  </div>
-                )}
                 <div>
                   <Label htmlFor="reject-reason">Reason (optional)</Label>
                   <Textarea

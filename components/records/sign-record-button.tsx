@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input'
 import { createClient } from '@/lib/supabase/client'
 import { generateSignatureHash } from '@/lib/crypto'
 import { SignatureIntent } from '@/lib/types'
+import { toast } from '@/lib/toast'
 
 interface SignRecordButtonProps {
   studyId: string
@@ -34,22 +35,20 @@ export default function SignRecordButton({ studyId, record }: SignRecordButtonPr
   const [loading, setLoading] = useState(false)
   const [intent, setIntent] = useState<SignatureIntent>('approval')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
 
   const handleSign = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    setError(null)
 
     const supabase = createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      setError('Authentication required. Please sign in again.')
+      toast.error('Authentication required', 'Please sign in again.')
       return
     }
 
     if (!password.trim()) {
-      setError('Password is required to create a signature.')
+      toast.error('Validation error', 'Password is required to create a signature.')
       return
     }
 
@@ -60,7 +59,7 @@ export default function SignRecordButton({ studyId, record }: SignRecordButtonPr
     })
 
     if (reAuthError) {
-      setError(reAuthError.message === 'Invalid login credentials' ? 'Invalid password.' : reAuthError.message)
+      toast.error('Authentication failed', reAuthError.message === 'Invalid login credentials' ? 'Invalid password.' : reAuthError.message)
       return
     }
 
@@ -99,9 +98,10 @@ export default function SignRecordButton({ studyId, record }: SignRecordButtonPr
       }
 
       setOpen(false)
+      toast.success('Signature created successfully')
       router.refresh()
-    } catch (err: any) {
-      setError(err.message || 'Failed to create signature')
+    } catch (err: unknown) {
+      toast.error('Signing failed', err instanceof Error ? err.message : 'Failed to create signature')
       setLoading(false)
     }
   }
@@ -121,11 +121,6 @@ export default function SignRecordButton({ studyId, record }: SignRecordButtonPr
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            {error && (
-              <div className="rounded-md bg-red-50 p-3">
-                <p className="text-sm text-red-800">{error}</p>
-              </div>
-            )}
             <div>
               <Label htmlFor="signature-intent">Signature Intent</Label>
               <select

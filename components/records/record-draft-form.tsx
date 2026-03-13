@@ -1,20 +1,23 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useFormStatus } from 'react-dom'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/lib/toast'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { saveDraftRecord } from '@/app/studies/[id]/records/actions'
-import { Plus, Trash2, Save } from 'lucide-react'
+import { Loader2, Plus, Trash2, Save } from 'lucide-react'
 import type { CustomFieldType } from '@/lib/types'
 
-function SaveButton() {
-  const { pending } = useFormStatus()
+function SaveButton({ pending }: { pending: boolean }) {
   return (
     <Button type="submit" disabled={pending}>
-      <Save className="mr-2 h-4 w-4" />
+      {pending ? (
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+      ) : (
+        <Save className="mr-2 h-4 w-4" />
+      )}
       {pending ? 'Saving...' : 'Save Draft'}
     </Button>
   )
@@ -114,12 +117,11 @@ export default function RecordDraftForm({
   recordId,
   initialContent,
 }: RecordDraftFormProps) {
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
   const [title, setTitle] = useState('')
   const [summary, setSummary] = useState('')
   const [notes, setNotes] = useState('')
   const [customFields, setCustomFields] = useState<CustomField[]>([])
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     const { title: t, summary: s, notes: n, customFields: cf } = contentToFormState(
@@ -153,29 +155,19 @@ export default function RecordDraftForm({
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setError(null)
-    setSuccess(false)
+    setSaving(true)
     const content = buildContentFromForm(title, summary, notes, customFields)
     const result = await saveDraftRecord(studyId, recordId, content)
+    setSaving(false)
     if (result?.error) {
-      setError(result.error)
+      toast.error('Save failed', result.error)
     } else {
-      setSuccess(true)
+      toast.success('Draft saved successfully')
     }
   }
 
   return (
     <form onSubmit={handleSubmit} className="max-w-2xl space-y-6">
-      {error && (
-        <div className="rounded-md bg-red-50 p-4">
-          <p className="text-sm text-red-800">{error}</p>
-        </div>
-      )}
-      {success && (
-        <div className="rounded-md bg-green-50 p-4">
-          <p className="text-sm text-green-800">Draft saved successfully.</p>
-        </div>
-      )}
       <div className="space-y-4">
         <div>
           <Label htmlFor="title">Title *</Label>
@@ -309,8 +301,8 @@ export default function RecordDraftForm({
           ))}
         </div>
       </div>
-      <div className="flex gap-2">
-        <SaveButton />
+            <div className="flex gap-2">
+              <SaveButton pending={saving} />
       </div>
     </form>
   )

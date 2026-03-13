@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/lib/toast'
+import { Loader2 } from 'lucide-react'
 
 interface ShareRecordButtonProps {
   recordId: string
@@ -11,11 +13,9 @@ interface ShareRecordButtonProps {
 export default function ShareRecordButton({ recordId, studyId }: ShareRecordButtonProps) {
   const [loading, setLoading] = useState(false)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
   const handleCreateShare = async () => {
     setLoading(true)
-    setError(null)
     setShareUrl(null)
     try {
       const res = await fetch('/api/share', {
@@ -30,8 +30,9 @@ export default function ShareRecordButton({ recordId, studyId }: ShareRecordButt
       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url)
       }
+      toast.success('Share link created and copied to clipboard', 'Expires in 30 days. Read-only.')
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create share link')
+      toast.error('Share failed', e instanceof Error ? e.message : 'Failed to create share link')
     } finally {
       setLoading(false)
     }
@@ -44,14 +45,18 @@ export default function ShareRecordButton({ recordId, studyId }: ShareRecordButt
         onClick={handleCreateShare}
         disabled={loading}
       >
-        {loading ? 'Creating…' : 'Share Verified Record'}
+        {loading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Creating…
+          </>
+        ) : (
+          'Share Verified Record'
+        )}
       </Button>
-      {error && (
-        <p className="text-sm text-red-600">{error}</p>
-      )}
       {shareUrl && (
-        <p className="text-sm text-gray-600">
-          Share link created and copied. Expires in 30 days. Read-only; no editing or re-sharing.
+        <p className="text-sm text-muted-foreground">
+          Link copied. Expires in 30 days. Read-only; no editing or re-sharing.
         </p>
       )}
     </div>
