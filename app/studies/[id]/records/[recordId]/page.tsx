@@ -9,9 +9,11 @@ import RecordSignatures from '@/components/records/record-signatures'
 import AmendRecordButton from '@/components/records/amend-record-button'
 import SignRecordButton from '@/components/records/sign-record-button'
 import ShareRecordButton from '@/components/records/share-record-button'
-import { canCreateRecord, canApproveRecord, canReviewRecord, canShareRecord } from '@/lib/supabase/permissions'
+import { canCreateRecord, canApproveRecord, canReviewRecord, canShareRecord, canManageStudyMembers } from '@/lib/supabase/permissions'
+import DeleteRecordButton from '@/components/records/delete-record-button'
 import RecordStatusActions from '@/components/records/record-status-actions'
 import RecordDocuments from '@/components/records/record-documents'
+import RecordAIActions from '@/components/records/record-ai-actions'
 import AnchorRecordButton from '@/components/records/anchor-record-button'
 import OrcidBadge from '@/components/profile/orcid-badge'
 import RecordCreatedBanner from '@/components/records/record-created-banner'
@@ -45,11 +47,19 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
     notFound()
   }
 
+  const { data: study } = await supabase
+    .from('studies')
+    .select('metadata')
+    .eq('id', id)
+    .single()
+  const aiEnabled = (study?.metadata as Record<string, unknown>)?.ai_enabled !== false
+
   // Check permissions
   const canAmend = await canCreateRecord(user.id, id)
   const canSign = await canApproveRecord(user.id, id)
   const canReject = await canReviewRecord(user.id, id) || canSign
   const canShare = await canShareRecord(user.id, id)
+  const canDelete = await canManageStudyMembers(user.id, id)
 
   const { data: creatorProfile } = await supabase
     .from('profiles')
@@ -127,6 +137,13 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
           <Button variant="outline" asChild>
             <Link href={`/verify/${record.id}`}>Verify Integrity</Link>
           </Button>
+          {canDelete && (record.status === 'draft' || record.status === 'rejected') && (
+            <DeleteRecordButton
+              recordId={record.id}
+              studyId={id}
+              recordNumber={record.record_number}
+            />
+          )}
           {record.status === 'approved' && canShare && (
             <ShareRecordButton recordId={record.id} studyId={id} />
           )}
@@ -145,11 +162,16 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
           </CardHeader>
           <CardContent>
             {isDraftEditable ? (
-              <RecordDraftForm
-                studyId={id}
-                recordId={record.id}
-                initialContent={record.content ?? {}}
-              />
+              <>
+                <RecordDraftForm
+                  studyId={id}
+                  recordId={record.id}
+                  initialContent={record.content ?? {}}
+                />
+                <div className="mt-4 pt-4 border-t">
+                  <RecordAIActions recordId={record.id} aiEnabled={aiEnabled} />
+                </div>
+              </>
             ) : (
               <>
                 <pre className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded">
@@ -158,6 +180,9 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
                 <p className="mt-4 text-xs text-gray-500">
                   Content Hash: {record.content_hash}
                 </p>
+                <div className="mt-4 pt-4 border-t">
+                  <RecordAIActions recordId={record.id} aiEnabled={aiEnabled} />
+                </div>
               </>
             )}
           </CardContent>

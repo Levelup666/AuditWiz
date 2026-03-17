@@ -7,6 +7,12 @@ import { Input } from '@/components/ui/input'
 import { Loader2 } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import Link from 'next/link'
+import {
+  validateFile,
+  FILE_INPUT_ACCEPT,
+  MAX_FILE_SIZE_MB,
+  SUPPORTED_TYPES_DESCRIPTION,
+} from '@/lib/document-upload'
 
 interface DocumentRow {
   id: string
@@ -52,16 +58,26 @@ export default function RecordDocuments({ recordId, studyId, canUpload }: Record
     const form = e.currentTarget
     const input = form.querySelector<HTMLInputElement>('input[type="file"]')
     if (!input?.files?.length) return
+    const file = input.files[0]
+    const validation = validateFile({
+      size: file.size,
+      type: file.type || 'application/octet-stream',
+      name: file.name,
+    })
+    if (!validation.valid) {
+      toast.error('Upload failed', validation.error)
+      return
+    }
     setUploading(true)
     try {
       const formData = new FormData()
-      formData.set('file', input.files[0])
+      formData.set('file', file)
       const res = await fetch(`/api/records/${recordId}/documents`, {
         method: 'POST',
         body: formData,
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Upload failed')
+      if (!res.ok) throw new Error(data.error ?? 'Upload failed')
       input.value = ''
       toast.success('Document uploaded successfully')
       fetchDocs()
@@ -96,9 +112,13 @@ export default function RecordDocuments({ recordId, studyId, canUpload }: Record
             <Input
               id="doc-file"
               type="file"
+              accept={FILE_INPUT_ACCEPT}
               className="mt-1"
               disabled={uploading}
             />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Max {MAX_FILE_SIZE_MB} MB. {SUPPORTED_TYPES_DESCRIPTION}.
+            </p>
           </div>
           <Button type="submit" disabled={uploading}>
             {uploading ? (

@@ -13,26 +13,33 @@ const STATUS_OPTIONS = [
 
 interface StudiesListToolbarProps {
   statusFilter?: string
+  institutionFilter?: string
+  institutions?: Array<{ id: string; name: string }>
 }
 
-export default function StudiesListToolbar({ statusFilter = '' }: StudiesListToolbarProps) {
+export default function StudiesListToolbar({
+  statusFilter = '',
+  institutionFilter = '',
+  institutions = [],
+}: StudiesListToolbarProps) {
   const router = useRouter()
   const pathname = usePathname()
 
-  function updateStatus(value: string) {
+  function updateFilters(status: string, institution: string) {
     const params = new URLSearchParams()
-    if (value) params.set('status', value)
+    if (status) params.set('status', status)
+    if (institution) params.set('institution', institution)
     const qs = params.toString()
     router.push(pathname + (qs ? `?${qs}` : ''))
   }
 
   return (
     <div className="flex flex-wrap items-center gap-2 mb-4">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Filter className="h-4 w-4 text-gray-500" />
         <select
           value={statusFilter}
-          onChange={(e) => updateStatus(e.target.value)}
+          onChange={(e) => updateFilters(e.target.value, institutionFilter)}
           className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
         >
           {STATUS_OPTIONS.map((opt) => (
@@ -41,6 +48,20 @@ export default function StudiesListToolbar({ statusFilter = '' }: StudiesListToo
             </option>
           ))}
         </select>
+        {institutions.length > 0 && (
+          <select
+            value={institutionFilter}
+            onChange={(e) => updateFilters(statusFilter, e.target.value)}
+            className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+          >
+            <option value="">All institutions</option>
+            {institutions.map((inst) => (
+              <option key={inst.id} value={inst.id}>
+                {inst.name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
     </div>
   )

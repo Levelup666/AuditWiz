@@ -1,9 +1,27 @@
 import { getAuditTrail } from '@/lib/supabase/audit'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { Badge } from '@/components/ui/badge'
 import { SYSTEM_ACTOR_ID } from '@/lib/types'
+import { ACTION_BADGE_STYLES, formatActionType } from '@/lib/audit-trail'
 
 interface RecordAuditTrailProps {
   recordId: string
+}
+
+async function getActorEmails(actorIds: string[]): Promise<Record<string, string>> {
+  const admin = createAdminClient()
+  const emails: Record<string, string> = {}
+  await Promise.all(
+    actorIds.map(async (id) => {
+      try {
+        const { data } = await admin.auth.admin.getUserById(id)
+        emails[id] = data.user?.email ?? id.slice(0, 8) + '…'
+      } catch {
+        emails[id] = id.slice(0, 8) + '…'
+      }
+    })
+  )
+  return emails
 }
 
 export default async function RecordAuditTrail({ recordId }: RecordAuditTrailProps) {
@@ -13,62 +31,85 @@ export default async function RecordAuditTrail({ recordId }: RecordAuditTrailPro
     return <div className="text-sm text-gray-500">No audit events yet</div>
   }
 
-  const getActionBadge = (actionType: string) => {
-    const styles: Record<string, string> = {
-      record_created: 'bg-blue-100 text-blue-800',
-      record_amended: 'bg-purple-100 text-purple-800',
-      record_submitted: 'bg-yellow-100 text-yellow-800',
-      signature_added: 'bg-green-100 text-green-800',
-      ai_action: 'bg-orange-100 text-orange-800',
-      system_action: 'bg-gray-100 text-gray-800',
-    }
-    return (
-      <Badge className={styles[actionType] || 'bg-gray-100 text-gray-800'}>
-        {actionType.replace('_', ' ')}
-      </Badge>
-    )
-  }
+  const actorIds = [
+    ...new Set(
+      events
+        .map((e: { actor_id: string | null }) => e.actor_id)
+        .filter((id): id is string => !!id && id !== SYSTEM_ACTOR_ID)
+    ),
+  ]
+  const actorEmails = await getActorEmails(actorIds)
 
   return (
-    <div className="space-y-4">
-      {events.map((event: any) => (
-        <div key={event.id} className="p-4 border border-gray-200 rounded-lg">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              {getActionBadge(event.action_type)}
-              <span className="text-sm text-gray-600">
-                {new Date(event.timestamp).toLocaleString()}
-              </span>
+    <div className="relative">
+      <div
+        className="absolute left-4 top-8 bottom-8 w-px bg-border"
+        aria-hidden
+      />
+      <div className="space-y-0">
+        {events.map((event: Record<string, unknown>) => (
+          <div key={String(event.id)} className="relative flex gap-4 pb-6 last:pb-0">
+            <div
+              className="relative z-10 mt-1.5 flex h-3 w-3 shrink-0 rounded-full border-2 border-background bg-primary"
+              aria-hidden
+            />
+            <div className="min-w-0 flex-1 rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge
+                    className={
+                      ACTION_BADGE_STYLES[String(event.action_type)] ??
+                      'bg-gray-100 text-gray-800'
+                    }
+                  >
+                    {formatActionType(String(event.action_type))}
+                  </Badge>
+                  <span className="text-sm text-gray-600">
+                    {new Date(String(event.timestamp)).toLocaleString()}
+                  </span>
+                </div>
+                {event.actor_id === SYSTEM_ACTOR_ID && (
+                  <Badge variant="outline" className="bg-orange-50 w-fit">
+                    System Action
+                  </Badge>
+                )}
+              </div>
+              <div className="mt-2 space-y-1 text-sm">
+                {event.actor_id && event.actor_id !== SYSTEM_ACTOR_ID ? (
+                  <p>
+                    <strong>Actor:</strong>{' '}
+                    {actorEmails[String(event.actor_id)] ??
+                      String(event.actor_id).slice(0, 8) + '…'}
+                    {event.actor_role_at_time
+                      ? ` (${event.actor_role_at_time})`
+                      : ''}
+                  </p>
+                ) : null}
+                {event.actor_id === SYSTEM_ACTOR_ID &&
+                (event.metadata as Record<string, unknown>)?.model_version ? (
+                  <p>
+                    <strong>AI Model:</strong>{' '}
+                    {String(
+                      (event.metadata as Record<string, unknown>).model_version
+                    )}
+                  </p>
+                ) : null}
+                {event.metadata &&
+                Object.keys(event.metadata as object).length > 0 ? (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700">
+                      View Metadata
+                    </summary>
+                    <pre className="mt-2 overflow-auto rounded bg-gray-50 p-2 text-xs">
+                      {JSON.stringify(event.metadata as object, null, 2)}
+                    </pre>
+                  </details>
+                ) : null}
+              </div>
             </div>
-            {event.actor_id === SYSTEM_ACTOR_ID && (
-              <Badge variant="outline" className="bg-orange-50">
-                System Action
-              </Badge>
-            )}
           </div>
-          <div className="text-sm space-y-1">
-            {event.actor_id && event.actor_id !== SYSTEM_ACTOR_ID && (
-              <p>
-                <strong>Actor:</strong> {event.actor_id}
-                {event.actor_role_at_time && ` (${event.actor_role_at_time})`}
-              </p>
-            )}
-            {event.actor_id === SYSTEM_ACTOR_ID && event.metadata?.model_version && (
-              <p>
-                <strong>AI Model:</strong> {event.metadata.model_version}
-              </p>
-            )}
-            {event.metadata && Object.keys(event.metadata).length > 0 && (
-              <details className="mt-2">
-                <summary className="cursor-pointer text-xs text-gray-500">View Metadata</summary>
-                <pre className="mt-2 text-xs bg-gray-50 p-2 rounded">
-                  {JSON.stringify(event.metadata, null, 2)}
-                </pre>
-              </details>
-            )}
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 }

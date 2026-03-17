@@ -6,7 +6,7 @@ import { Plus } from 'lucide-react'
 import StudiesList from '@/components/studies/studies-list'
 
 interface StudiesPageProps {
-  searchParams: Promise<{ status?: string }>
+  searchParams: Promise<{ status?: string; institution?: string }>
 }
 
 export default async function StudiesPage({ searchParams }: StudiesPageProps) {
@@ -20,6 +20,22 @@ export default async function StudiesPage({ searchParams }: StudiesPageProps) {
   }
 
   const sp = await searchParams
+
+  const { data: institutionMembers } = await supabase
+    .from('institution_members')
+    .select('institution_id')
+    .eq('user_id', user.id)
+    .is('revoked_at', null)
+
+  const institutionIds = [...new Set((institutionMembers ?? []).map((m) => m.institution_id))]
+  const { data: institutions } =
+    institutionIds.length > 0
+      ? await supabase
+          .from('institutions')
+          .select('id, name')
+          .in('id', institutionIds)
+          .order('name')
+      : { data: [] }
 
   return (
     <div className="space-y-6">
@@ -46,7 +62,12 @@ export default async function StudiesPage({ searchParams }: StudiesPageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <StudiesList userId={user.id} statusFilter={sp?.status} />
+          <StudiesList
+            userId={user.id}
+            statusFilter={sp?.status}
+            institutionFilter={sp?.institution}
+            institutions={institutions ?? []}
+          />
         </CardContent>
       </Card>
     </div>

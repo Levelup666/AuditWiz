@@ -4,6 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { FolderOpen, Activity, FileText } from 'lucide-react'
+import { getRecentNotifications } from '@/lib/notifications'
+import NotificationsList from '@/components/dashboard/notifications-list'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -15,6 +17,8 @@ export default async function DashboardPage() {
     redirect('/auth/signin')
   }
   const userId = user!.id
+
+  const notifications = await getRecentNotifications(userId, 10)
 
   // Get some quick stats
   const { count: studiesCount } = await supabase
@@ -84,6 +88,10 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {notifications.length > 0 && (
+        <NotificationsList notifications={notifications} />
+      )}
 
       <Card>
         <CardHeader>

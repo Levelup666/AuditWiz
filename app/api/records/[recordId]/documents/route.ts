@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { canCreateRecord } from '@/lib/supabase/permissions'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
+import { validateFile } from '@/lib/document-upload'
 import { createHash, randomUUID } from 'crypto'
 
 const BUCKET = 'documents'
@@ -68,6 +69,16 @@ export async function POST(
   const file = formData.get('file') as File | null
   if (!file || !file.size) {
     return NextResponse.json({ error: 'file is required' }, { status: 400 })
+  }
+
+  const validation = validateFile({
+    size: file.size,
+    type: file.type || 'application/octet-stream',
+    name: file.name,
+  })
+  if (!validation.valid) {
+    const status = validation.error?.includes('too large') ? 413 : 400
+    return NextResponse.json({ error: validation.error }, { status })
   }
 
   const buffer = Buffer.from(await file.arrayBuffer())

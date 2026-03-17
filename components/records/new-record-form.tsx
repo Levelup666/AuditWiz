@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { createRecord } from '@/app/studies/[id]/records/actions'
 import { Plus, Trash2 } from 'lucide-react'
-import type { CustomFieldType } from '@/lib/types'
+import type { CustomFieldType, RecordTemplate } from '@/lib/types'
 
 function SubmitButton() {
   const { pending } = useFormStatus()
@@ -75,10 +75,46 @@ function buildContentFromForm(
 
 interface NewRecordFormProps {
   studyId: string
+  templates?: RecordTemplate[]
 }
 
-export default function NewRecordForm({ studyId }: NewRecordFormProps) {
+export default function NewRecordForm({ studyId, templates = [] }: NewRecordFormProps) {
   const [customFields, setCustomFields] = useState<CustomField[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
+  const [title, setTitle] = useState('')
+  const [summary, setSummary] = useState('')
+  const [notes, setNotes] = useState('')
+
+  function applyTemplate(template: RecordTemplate | null) {
+    if (!template) {
+      setTitle('')
+      setSummary('')
+      setNotes('')
+      setCustomFields([])
+      return
+    }
+    const schema = template.contentSchema
+    setTitle(schema.title ?? '')
+    setSummary(schema.summary ?? '')
+    setNotes(schema.notes ?? '')
+    setCustomFields(
+      (schema.customFields ?? []).map((f) => ({
+        id: crypto.randomUUID(),
+        name: f.name,
+        type: f.type,
+        value: f.value ?? '',
+      }))
+    )
+  }
+
+  function handleTemplateChange(nextId: string) {
+    if (selectedTemplateId && (title || summary || notes || customFields.length > 0)) {
+      if (!confirm('This will replace your current content. Continue?')) return
+    }
+    const template = nextId ? templates.find((t) => t.id === nextId) ?? null : null
+    setSelectedTemplateId(nextId)
+    applyTemplate(template ?? null)
+  }
 
   function addCustomField() {
     setCustomFields((prev) => [
@@ -101,10 +137,10 @@ export default function NewRecordForm({ studyId }: NewRecordFormProps) {
   }
 
   async function handleSubmit(formData: FormData) {
-    const title = (formData.get('title') as string)?.trim() ?? ''
-    const summary = (formData.get('summary') as string)?.trim() ?? ''
-    const notes = (formData.get('notes') as string)?.trim() ?? ''
-    const content = buildContentFromForm(title, summary, notes, customFields)
+    const titleVal = (formData.get('title') as string)?.trim() ?? ''
+    const summaryVal = (formData.get('summary') as string)?.trim() ?? ''
+    const notesVal = (formData.get('notes') as string)?.trim() ?? ''
+    const content = buildContentFromForm(titleVal, summaryVal, notesVal, customFields)
     // Pass content as JSON in a hidden field; action still expects record_number + content
     const fd = new FormData()
     fd.set('record_number', (formData.get('record_number') as string) ?? '')
@@ -120,6 +156,24 @@ export default function NewRecordForm({ studyId }: NewRecordFormProps) {
   return (
     <form action={handleSubmit} className="max-w-2xl space-y-6">
       <div className="space-y-4">
+        {templates.length > 0 && (
+          <div>
+            <Label htmlFor="template">Start from template</Label>
+            <select
+              id="template"
+              value={selectedTemplateId}
+              onChange={(e) => handleTemplateChange(e.target.value)}
+              className="mt-1 flex h-9 w-full max-w-xs rounded-md border border-input bg-background px-3 py-1 text-sm"
+            >
+              <option value="">Blank</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <Label htmlFor="record_number">Record Number *</Label>
           <Input
@@ -143,6 +197,8 @@ export default function NewRecordForm({ studyId }: NewRecordFormProps) {
             required
             placeholder="Short title for the record"
             className="mt-1"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
           />
         </div>
         <div>
@@ -153,6 +209,8 @@ export default function NewRecordForm({ studyId }: NewRecordFormProps) {
             placeholder="Brief summary (optional)"
             className="mt-1"
             rows={3}
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
           />
         </div>
         <div>
@@ -163,6 +221,8 @@ export default function NewRecordForm({ studyId }: NewRecordFormProps) {
             placeholder="Additional notes (optional)"
             className="mt-1"
             rows={2}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
           />
         </div>
 

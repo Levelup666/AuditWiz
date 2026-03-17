@@ -8,9 +8,16 @@ import StudiesListToolbar from '@/components/studies/studies-list-toolbar'
 interface StudiesListProps {
   userId: string
   statusFilter?: string
+  institutionFilter?: string
+  institutions?: Array<{ id: string; name: string }>
 }
 
-export default async function StudiesList({ userId, statusFilter }: StudiesListProps) {
+export default async function StudiesList({
+  userId,
+  statusFilter,
+  institutionFilter,
+  institutions = [],
+}: StudiesListProps) {
   const supabase = await createClient()
 
   // Fetch studies where user is a member
@@ -26,6 +33,9 @@ export default async function StudiesList({ userId, statusFilter }: StudiesListP
 
   if (statusFilter) {
     query = query.eq('status', statusFilter)
+  }
+  if (institutionFilter) {
+    query = query.eq('institution_id', institutionFilter)
   }
 
   const { data: studies, error } = await query
@@ -96,7 +106,11 @@ export default async function StudiesList({ userId, statusFilter }: StudiesListP
 
   return (
     <>
-      <StudiesListToolbar statusFilter={statusFilter} />
+      <StudiesListToolbar
+        statusFilter={statusFilter}
+        institutionFilter={institutionFilter}
+        institutions={institutions}
+      />
       <Table>
         <TableHeader>
           <TableRow>

@@ -8,6 +8,7 @@ import { Plus, Settings } from 'lucide-react'
 import { canCreateRecord, canManageStudyMembers } from '@/lib/supabase/permissions'
 import { Badge } from '@/components/ui/badge'
 import StudyDocumentationCard from '@/components/studies/study-documentation-card'
+import StudyAuditTrail from '@/components/studies/study-audit-trail'
 
 interface StudyPageProps {
   params: Promise<{ id: string }>
@@ -102,6 +103,8 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
           <RecordsList studyId={id} statusFilter={sp?.status} sortBy={sp?.sort} />
         </CardContent>
       </Card>
+
+      <StudyAuditTrail studyId={id} />
     </div>
   )
 }

@@ -17,7 +17,15 @@ function SubmitButton() {
   )
 }
 
-export default function NewStudyForm() {
+interface NewStudyFormProps {
+  institutions: Array<{ id: string; name: string; slug: string }>
+  preselectedInstitutionId?: string | null
+}
+
+export default function NewStudyForm({
+  institutions = [],
+  preselectedInstitutionId,
+}: NewStudyFormProps) {
   async function handleSubmit(formData: FormData) {
     const result = await createStudy(formData)
     if (result?.error) {
@@ -30,6 +38,25 @@ export default function NewStudyForm() {
   return (
     <form action={handleSubmit} className="space-y-6 max-w-md">
       <div className="space-y-4">
+        {institutions.length > 0 && (
+          <div>
+            <Label htmlFor="institution_id">Institution *</Label>
+            <select
+              id="institution_id"
+              name="institution_id"
+              required
+              defaultValue={preselectedInstitutionId ?? ''}
+              className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="">Select institution</option>
+              {institutions.map((inst) => (
+                <option key={inst.id} value={inst.id}>
+                  {inst.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <Label htmlFor="title">Title *</Label>
           <Input

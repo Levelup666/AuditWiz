@@ -13,8 +13,11 @@ export type AuditActionType =
   | 'study_created' | 'study_updated' | 'study_deleted'
   | 'member_added' | 'member_removed' | 'member_role_changed'
   | 'study_member_invited' | 'study_member_joined'
+  | 'institution_created' | 'institution_updated' | 'institution_deleted'
+  | 'institution_member_added' | 'institution_member_removed' | 'institution_member_role_changed'
+  | 'institution_member_invited' | 'institution_member_joined'
   | 'record_created' | 'record_submitted' | 'record_amended' | 'record_rejected' | 'record_approved'
-  | 'record_draft_updated'
+  | 'record_draft_updated' | 'record_deleted'
   | 'document_uploaded' | 'document_deleted'
   | 'signature_added' | 'signature_revoked'
   | 'identity_linked'
@@ -22,12 +25,35 @@ export type AuditActionType =
   | 'ai_action' | 'system_action'
   | 'blockchain_anchored';
 
+export interface Institution {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  domain: string | null;
+  metadata: { [key: string]: any };
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InstitutionMember {
+  id: string;
+  institution_id: string;
+  user_id: string;
+  role: 'admin' | 'member';
+  granted_by: string | null;
+  granted_at: string;
+  revoked_at: string | null;
+}
+
 export interface Study {
   id: string;
   title: string;
   description: string | null;
   documentation?: string | null;
   status: StudyStatus;
+  institution_id?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -155,6 +181,20 @@ export const SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
 
 // Custom field type for record form (add-your-own fields)
 export type CustomFieldType = 'text' | 'integer' | 'number' | 'date' | 'boolean';
+
+// Record template for study metadata
+export interface RecordTemplateContentSchema {
+  title?: string;
+  summary?: string;
+  notes?: string;
+  customFields: Array<{ name: string; type: CustomFieldType; value?: string }>;
+}
+
+export interface RecordTemplate {
+  id: string;
+  name: string;
+  contentSchema: RecordTemplateContentSchema;
+}
 
 // Helper type for system action metadata
 export interface SystemActionMetadata {

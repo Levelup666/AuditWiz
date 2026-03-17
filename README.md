@@ -78,6 +78,7 @@ NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 WEB3_STORAGE_TOKEN=your_token (optional)
 ALCHEMY_RPC_URL=your_rpc_url (optional)
+OPENAI_API_KEY=your_openai_key (optional, for AI summarization)
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 

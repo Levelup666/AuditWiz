@@ -17,6 +17,7 @@ export default function StudySettingsForm({ studyId, initial }: StudySettingsFor
   const [pending, setPending] = useState(false)
   const [requireReview, setRequireReview] = useState(initial.require_review_before_approval)
   const [allowCreator, setAllowCreator] = useState(initial.allow_creator_approval)
+  const [aiEnabled, setAiEnabled] = useState(initial.ai_enabled ?? true)
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -28,6 +29,7 @@ export default function StudySettingsForm({ studyId, initial }: StudySettingsFor
       required_approval_count: count,
       require_review_before_approval: requireReview,
       allow_creator_approval: allowCreator,
+      ai_enabled: aiEnabled,
     })
     setPending(false)
     if (result?.error) {
@@ -83,6 +85,18 @@ export default function StudySettingsForm({ studyId, initial }: StudySettingsFor
             />
             <Label htmlFor="allow_creator_approval" className="font-normal">
               Allow study creator to approve records (in addition to approver role)
+            </Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="ai_enabled"
+              checked={aiEnabled}
+              onChange={(e) => setAiEnabled(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <Label htmlFor="ai_enabled" className="font-normal">
+              Enable AI features (summarization, analysis)
             </Label>
           </div>
         </CardContent>

@@ -9,6 +9,7 @@ export interface StudySettingsInput {
   required_approval_count: number
   require_review_before_approval: boolean
   allow_creator_approval: boolean
+  ai_enabled?: boolean
 }
 
 export async function updateStudySettings(
@@ -33,12 +34,25 @@ export async function updateStudySettings(
     return { error: 'Required approval count must be at least 1' }
   }
 
+  const { data: existing } = await supabase
+    .from('studies')
+    .select('metadata')
+    .eq('id', studyId)
+    .single()
+
+  const existingMetadata = (existing?.metadata ?? {}) as Record<string, unknown>
+  const metadata =
+    settings.ai_enabled !== undefined
+      ? { ...existingMetadata, ai_enabled: settings.ai_enabled }
+      : existingMetadata
+
   const { error } = await supabase
     .from('studies')
     .update({
       required_approval_count: count,
       require_review_before_approval: Boolean(settings.require_review_before_approval),
       allow_creator_approval: Boolean(settings.allow_creator_approval),
+      metadata,
     })
     .eq('id', studyId)
 

@@ -13,12 +13,16 @@ import {
   User,
   Menu,
   ChevronLeft,
+  Building2,
+  Mail,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useNavContext } from './nav-provider'
 
 const navigation = [
   { name: 'Studies', href: '/studies', icon: FolderOpen },
+  { name: 'Institutions', href: '/institutions', icon: Building2 },
+  { name: 'Invites', href: '/invites', icon: Mail },
   { name: 'Dashboard', href: '/dashboard', icon: Home },
   { name: 'Audit Trail', href: '/dashboard/audit-trail', icon: Activity },
   { name: 'Profile', href: '/profile', icon: User },

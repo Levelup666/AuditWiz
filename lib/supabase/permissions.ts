@@ -141,3 +141,31 @@ export async function canCommentInStudy(
   const perms = await getStudyMemberPermissions(userId, studyId);
   return Boolean(perms?.can_view && perms.can_comment);
 }
+
+/**
+ * Check if user can manage institution (institution admin)
+ */
+export async function canManageInstitution(
+  userId: string,
+  institutionId: string
+): Promise<boolean> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('institution_members')
+    .select('role')
+    .eq('institution_id', institutionId)
+    .eq('user_id', userId)
+    .is('revoked_at', null)
+    .maybeSingle();
+  return data?.role === 'admin';
+}
+
+/**
+ * Check if user can create studies in an institution (institution admin)
+ */
+export async function canCreateStudyInInstitution(
+  userId: string,
+  institutionId: string
+): Promise<boolean> {
+  return canManageInstitution(userId, institutionId);
+}

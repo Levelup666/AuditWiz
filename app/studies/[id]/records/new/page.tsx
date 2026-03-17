@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import NewRecordForm from '@/components/records/new-record-form'
+import type { RecordTemplate } from '@/lib/types'
 
 interface NewRecordPageProps {
   params: Promise<{ id: string }>
@@ -19,13 +20,16 @@ export default async function NewRecordPage({ params }: NewRecordPageProps) {
 
   const { data: study, error } = await supabase
     .from('studies')
-    .select('id, title')
+    .select('id, title, metadata')
     .eq('id', studyId)
     .single()
 
   if (error || !study) {
     notFound()
   }
+
+  const metadata = (study.metadata ?? {}) as Record<string, unknown>
+  const recordTemplates = (metadata.record_templates ?? []) as RecordTemplate[]
 
   return (
     <div className="space-y-6">
@@ -35,7 +39,7 @@ export default async function NewRecordPage({ params }: NewRecordPageProps) {
           Add a new record to {study.title}. Records are immutable once created; use Amend to create new versions.
         </p>
       </div>
-      <NewRecordForm studyId={studyId} />
+      <NewRecordForm studyId={studyId} templates={recordTemplates} />
     </div>
   )
 }
