@@ -18,6 +18,7 @@ import AnchorRecordButton from '@/components/records/anchor-record-button'
 import OrcidBadge from '@/components/profile/orcid-badge'
 import RecordCreatedBanner from '@/components/records/record-created-banner'
 import RecordDraftForm from '@/components/records/record-draft-form'
+import RecordContentSummary from '@/components/records/record-content-summary'
 
 interface RecordPageProps {
   params: Promise<{ id: string; recordId: string }>
@@ -164,6 +165,7 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
             {isDraftEditable ? (
               <>
                 <RecordDraftForm
+                  key={record.id}
                   studyId={id}
                   recordId={record.id}
                   initialContent={record.content ?? {}}
@@ -174,12 +176,14 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
               </>
             ) : (
               <>
-                <pre className="whitespace-pre-wrap text-sm bg-gray-50 p-4 rounded">
-                  {JSON.stringify(record.content, null, 2)}
-                </pre>
-                <p className="mt-4 text-xs text-gray-500">
-                  Content Hash: {record.content_hash}
-                </p>
+                <RecordContentSummary content={(record.content ?? {}) as Record<string, unknown>} />
+                <p className="mt-4 text-xs text-gray-500">Content Hash: {record.content_hash}</p>
+                <details className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-sm">
+                  <summary className="cursor-pointer font-medium text-muted-foreground">Raw JSON</summary>
+                  <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs">
+                    {JSON.stringify(record.content, null, 2)}
+                  </pre>
+                </details>
                 <div className="mt-4 pt-4 border-t">
                   <RecordAIActions recordId={record.id} aiEnabled={aiEnabled} />
                 </div>

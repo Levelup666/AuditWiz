@@ -82,7 +82,11 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
       setEmail('')
       setOrcidId('')
       setRole('reviewer')
-      toast.success(data.pending ? (data.message ?? 'Pending invite created') : 'Member added')
+      toast.success(
+        data.pending
+          ? (data.message ?? 'Pending invite created')
+          : (data.message ?? 'Member added')
+      )
       fetchMembers()
     } catch (e) {
       toast.error('Add failed', e instanceof Error ? e.message : 'Failed to add member')
@@ -121,6 +125,11 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
 
   return (
     <div className="space-y-6">
+      <p className="text-sm text-muted-foreground">
+        People with accounts can accept pending invites under <strong>Invites</strong> in the sidebar
+        without using email links. If the institution is set to <strong>members only</strong>, users
+        must join the institution before they can be added or accept a study invite.
+      </p>
       <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-4 rounded-lg border p-4">
         <div className="flex-1 min-w-[200px]">
           <Label htmlFor="member-email">Email</Label>

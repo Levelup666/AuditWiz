@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { canManageInstitution } from '@/lib/supabase/permissions'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
+import { sendPendingInviteEmail } from '@/lib/email/pending-invite-notification'
 
 const VALID_ROLES = ['admin', 'member'] as const
 const DEFAULT_EXPIRY_DAYS = 7
@@ -138,6 +139,12 @@ export async function POST(
       role,
     }
   )
+
+  await sendPendingInviteEmail({
+    to: emailTrim,
+    kind: 'institution',
+    contextLabel: institution.name,
+  })
 
   return NextResponse.json({
     success: true,

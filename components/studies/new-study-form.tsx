@@ -18,12 +18,13 @@ function SubmitButton() {
 }
 
 interface NewStudyFormProps {
+  /** Institutions where the user is an admin (required for study creation). */
   institutions: Array<{ id: string; name: string; slug: string }>
   preselectedInstitutionId?: string | null
 }
 
 export default function NewStudyForm({
-  institutions = [],
+  institutions,
   preselectedInstitutionId,
 }: NewStudyFormProps) {
   async function handleSubmit(formData: FormData) {
@@ -38,25 +39,28 @@ export default function NewStudyForm({
   return (
     <form action={handleSubmit} className="space-y-6 max-w-md">
       <div className="space-y-4">
-        {institutions.length > 0 && (
-          <div>
-            <Label htmlFor="institution_id">Institution *</Label>
-            <select
-              id="institution_id"
-              name="institution_id"
-              required
-              defaultValue={preselectedInstitutionId ?? ''}
-              className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            >
-              <option value="">Select institution</option>
-              {institutions.map((inst) => (
-                <option key={inst.id} value={inst.id}>
-                  {inst.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+        <div>
+          <Label htmlFor="institution_id">Institution *</Label>
+          <select
+            id="institution_id"
+            name="institution_id"
+            required
+            defaultValue={preselectedInstitutionId ?? institutions[0]?.id ?? ''}
+            className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="" disabled>
+              Select institution
+            </option>
+            {institutions.map((inst) => (
+              <option key={inst.id} value={inst.id}>
+                {inst.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Only institutions you administer are listed. Each new study must belong to one of them.
+          </p>
+        </div>
         <div>
           <Label htmlFor="title">Title *</Label>
           <Input

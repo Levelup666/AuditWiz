@@ -15,6 +15,7 @@ Research-focused auditing platform designed with clinical-ready architecture pri
 
 ### Study Management
 - Studies replace "projects" as the core organizational unit
+- **New studies** require a non-null `institution_id` and **institution admin** membership (enforced in the app and via RLS). Complete institution onboarding first, or ask an institution admin to promote you.
 - Study-scoped role-based access control (RBAC)
 - Roles: `creator`, `reviewer`, `approver`, `auditor`, `admin`
 
@@ -55,6 +56,16 @@ See `supabase/migrations/20241221000001_initial_clinical_ready_schema.sql` for t
 - `audit_events`: Append-only audit ledger
 - `blockchain_anchors`: Blockchain anchoring records
 
+### Legacy studies (`institution_id` backfill)
+
+If you have studies created before institution scoping, migration `20250322000001_backfill_study_institution_legacy.sql` runs once to:
+
+- Create a **Legacy (migrated studies)** institution per distinct `created_by` (slug `legacy-migrated-{uuid}`).
+- Grant that user **institution admin** on that legacy org.
+- Set `studies.institution_id` for all rows that were still `NULL`.
+
+Safe to re-run; idempotent. Apply with `supabase db push` / your normal migration flow.
+
 ### Row Level Security (RLS)
 All tables have RLS policies enforcing study-scoped access control. Audit events are read-only for all users.
 
@@ -80,6 +91,10 @@ WEB3_STORAGE_TOKEN=your_token (optional)
 ALCHEMY_RPC_URL=your_rpc_url (optional)
 OPENAI_API_KEY=your_openai_key (optional, for AI summarization)
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# Optional: email notifications for pending study/institution invites (Resend)
+# RESEND_API_KEY=re_...
+# RESEND_FROM_EMAIL="AuditWiz <notifications@yourdomain.com>"
 ```
 
 3. Run database migrations:

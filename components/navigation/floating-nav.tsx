@@ -14,15 +14,14 @@ import {
   Menu,
   ChevronLeft,
   Building2,
-  Mail,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useNavContext } from './nav-provider'
+import InvitesNavLink from './invites-nav-link'
 
 const navigation = [
   { name: 'Studies', href: '/studies', icon: FolderOpen },
   { name: 'Institutions', href: '/institutions', icon: Building2 },
-  { name: 'Invites', href: '/invites', icon: Mail },
   { name: 'Dashboard', href: '/dashboard', icon: Home },
   { name: 'Audit Trail', href: '/dashboard/audit-trail', icon: Activity },
   { name: 'Profile', href: '/profile', icon: User },
@@ -31,7 +30,16 @@ const navigation = [
 export default function FloatingNav() {
   const pathname = usePathname()
   const router = useRouter()
-  const { isOpen, setIsOpen } = useNavContext() ?? { isOpen: false, setIsOpen: () => {} }
+  const ctx = useNavContext()
+  const { isOpen, setIsOpen, isAuthenticated } = ctx ?? {
+    isOpen: false,
+    setIsOpen: () => {},
+    isAuthenticated: false,
+  }
+
+  if (!isAuthenticated) {
+    return null
+  }
 
   const handleSignOut = async () => {
     const supabase = createClient()
@@ -93,6 +101,7 @@ export default function FloatingNav() {
                   </Link>
                 )
               })}
+              <InvitesNavLink isOpen onNavigate={() => setIsOpen(false)} />
             </div>
             <div className="border-t border-gray-800 p-4">
               <Button
@@ -125,6 +134,11 @@ export default function FloatingNav() {
                 </Link>
               )
             })}
+            <InvitesNavLink
+              isOpen={false}
+              collapsed
+              onNavigate={() => setIsOpen(false)}
+            />
             <div className="mt-auto border-t border-gray-800 p-2">
               <Button
                 onClick={handleSignOut}

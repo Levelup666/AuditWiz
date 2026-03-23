@@ -5,6 +5,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
+import { isValidInstitutionResearchField } from '@/lib/institution-research-types'
+import { parseAllowExternalFromForm } from '@/lib/institution-collaboration'
 
 function slugify(text: string): string {
   return text
@@ -27,9 +29,17 @@ export async function createInstitution(formData: FormData) {
   const slugInput = (formData.get('slug') as string)?.trim()
   const description = (formData.get('description') as string)?.trim() || null
   const domain = (formData.get('domain') as string)?.trim() || null
+  const researchField = (formData.get('research_field') as string)?.trim()
+  const allowExternalCollaborators = parseAllowExternalFromForm(
+    formData.get('allow_external_collaborators')?.toString()
+  )
 
   if (!name) {
     return { error: 'Institution name is required' }
+  }
+
+  if (!researchField || !isValidInstitutionResearchField(researchField)) {
+    return { error: 'Please select a valid primary research field.' }
   }
 
   const slug = slugInput || slugify(name)
@@ -54,6 +64,10 @@ export async function createInstitution(formData: FormData) {
       slug,
       description: description || null,
       domain: domain || null,
+      metadata: {
+        research_field: researchField,
+        allow_external_collaborators: allowExternalCollaborators,
+      },
       created_by: user.id,
     })
     .select('id')
@@ -78,6 +92,8 @@ export async function createInstitution(formData: FormData) {
     institution_id: institution.id,
     name,
     slug,
+    research_field: researchField,
+    allow_external_collaborators: allowExternalCollaborators,
   })
 
   await createAuditEvent(
@@ -88,7 +104,12 @@ export async function createInstitution(formData: FormData) {
     institution.id,
     null,
     newStateHash,
-    { name, slug }
+    {
+      name,
+      slug,
+      research_field: researchField,
+      allow_external_collaborators: allowExternalCollaborators,
+    }
   )
 
   revalidatePath('/onboarding')

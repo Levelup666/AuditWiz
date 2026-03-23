@@ -2,6 +2,26 @@
  * Shared audit trail utilities: badge styles and human-readable action labels.
  */
 
+import { SYSTEM_ACTOR_ID } from '@/lib/types'
+
+/** True when the event should display as system/AI (no real auth.users actor row). */
+export function isSystemAuditActor(event: {
+  actor_id: string | null
+  action_type?: string
+  metadata?: unknown
+}): boolean {
+  if (event.actor_id === SYSTEM_ACTOR_ID) return true
+  const meta = event.metadata as Record<string, unknown> | null | undefined
+  if (meta?.is_system_action === true) return true
+  if (
+    event.actor_id == null &&
+    (event.action_type === 'ai_action' || event.action_type === 'system_action')
+  ) {
+    return true
+  }
+  return false
+}
+
 export const ACTION_BADGE_STYLES: Record<string, string> = {
   study_created: 'bg-blue-100 text-blue-800',
   study_updated: 'bg-blue-100 text-blue-800',

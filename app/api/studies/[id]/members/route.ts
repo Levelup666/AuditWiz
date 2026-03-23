@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { canManageStudyMembers } from '@/lib/supabase/permissions'
+import { canManageStudyMembers, isActiveInstitutionMember } from '@/lib/supabase/permissions'
+import { getStudyCollaborationPolicy } from '@/lib/study-institution-policy'
+import { sendPendingInviteEmail } from '@/lib/email/pending-invite-notification'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 
@@ -113,6 +115,10 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
   }
 
+  const policy = await getStudyCollaborationPolicy(studyId)
+  const institutionOnlyMessage =
+    'This institution requires everyone on a study to be an institution member first. Invite them to the institution (and wait for acceptance), or enable external collaborators in institution settings.'
+
   const flags = permissionFlagsForRole(role)
 
   // Invite by ORCID: resolve user from user_identities
@@ -126,6 +132,14 @@ export async function POST(
       .maybeSingle()
 
     if (identity) {
+      if (
+        policy.institutionId &&
+        !policy.allowExternalCollaborators &&
+        !(await isActiveInstitutionMember(identity.user_id, policy.institutionId))
+      ) {
+        return NextResponse.json({ error: institutionOnlyMessage }, { status: 403 })
+      }
+
       const { error: insertError } = await supabase.from('study_members').insert({
         study_id: studyId,
         user_id: identity.user_id,
@@ -164,6 +178,17 @@ export async function POST(
     }
 
     // ORCID not registered: create pending invitation (require matching ORCID login to accept)
+    if (policy.institutionId && !policy.allowExternalCollaborators) {
+      return NextResponse.json(
+        {
+          error:
+            institutionOnlyMessage +
+            ' Pending ORCID invites are not allowed while institution members only is enabled.',
+        },
+        { status: 403 }
+      )
+    }
+
     const expiresAt = new Date()
     expiresAt.setDate(expiresAt.getDate() + 7)
     const { data: invite, error: inviteError } = await supabase
@@ -199,11 +224,18 @@ export async function POST(
       stateHash,
       { role, orcid_id: orcidId, pending: true }
     )
+    if (emailTrim) {
+      await sendPendingInviteEmail({
+        to: emailTrim,
+        kind: 'study',
+        contextLabel: policy.studyTitle,
+      })
+    }
     return NextResponse.json({
       success: true,
       pending: true,
       message:
-        'Invitation created. They must sign in with this ORCID to accept.',
+        'Invitation created. They can accept from the Invites page after signing in with this ORCID (email notification sent if an address was provided and mail is configured).',
     })
   }
 
@@ -221,10 +253,71 @@ export async function POST(
   )
 
   if (!found) {
-    return NextResponse.json(
-      { error: 'No user found with that email. They must sign up first.' },
-      { status: 404 }
+    if (!policy.allowExternalCollaborators && policy.institutionId) {
+      return NextResponse.json(
+        {
+          error:
+            'No account exists for that email. With institution members only, invite them to the institution first, or temporarily allow external collaborators to send a study-only invite.',
+        },
+        { status: 403 }
+      )
+    }
+
+    const expiresAt = new Date()
+    expiresAt.setDate(expiresAt.getDate() + 7)
+    const { data: invite, error: inviteError } = await supabase
+      .from('study_member_invites')
+      .insert({
+        study_id: studyId,
+        email: emailTrim,
+        role,
+        invited_by: user.id,
+        expires_at: expiresAt.toISOString(),
+      })
+      .select('id')
+      .single()
+
+    if (inviteError) {
+      return NextResponse.json({ error: inviteError.message }, { status: 500 })
+    }
+
+    const stateHash = await generateHash({
+      study_id: studyId,
+      invite_id: invite.id,
+      email: emailTrim,
+      role,
+    })
+    await createAuditEvent(
+      studyId,
+      user.id,
+      'study_member_invited',
+      'study_member_invite',
+      invite.id,
+      null,
+      stateHash,
+      { role, email: emailTrim, pending: true, no_account_yet: true }
     )
+
+    await sendPendingInviteEmail({
+      to: emailTrim,
+      kind: 'study',
+      contextLabel: policy.studyTitle,
+    })
+
+    return NextResponse.json({
+      success: true,
+      pending: true,
+      message:
+        'No account yet—pending invite created. They should sign up with this email, then accept under Invites in the app. An email was sent if outbound mail is configured.',
+    })
+  }
+
+  if (
+    policy.institutionId &&
+    !policy.allowExternalCollaborators &&
+    !(await isActiveInstitutionMember(found.id, policy.institutionId))
+  ) {
+    return NextResponse.json({ error: institutionOnlyMessage }, { status: 403 })
   }
 
   const { error: insertError } = await supabase.from('study_members').insert({
@@ -262,7 +355,16 @@ export async function POST(
     { role, email: emailTrim }
   )
 
-  return NextResponse.json({ success: true })
+  await sendPendingInviteEmail({
+    to: emailTrim,
+    kind: 'study',
+    contextLabel: policy.studyTitle,
+  })
+
+  return NextResponse.json({
+    success: true,
+    message: 'Member added. They can also see this study from Invites if they prefer the in-app flow.',
+  })
 }
 
 export async function PATCH(

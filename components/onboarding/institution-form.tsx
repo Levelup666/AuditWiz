@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { createInstitution } from '@/app/onboarding/actions'
 import { toast } from '@/lib/toast'
+import { INSTITUTION_RESEARCH_TYPES } from '@/lib/institution-research-types'
 
 function slugify(text: string): string {
   return text
@@ -44,6 +45,29 @@ export default function InstitutionForm() {
 
   return (
     <form onSubmit={handleSubmit} className="max-w-xl space-y-6">
+      <div>
+        <Label htmlFor="research_field">Primary research field *</Label>
+        <select
+          id="research_field"
+          name="research_field"
+          required
+          className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          defaultValue=""
+        >
+          <option value="" disabled>
+            Select a research area
+          </option>
+          {INSTITUTION_RESEARCH_TYPES.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Describes the main domain your institution works in. You can choose &quot;Other / general
+          research&quot; if none of the categories fit.
+        </p>
+      </div>
       <div>
         <Label htmlFor="name">Institution name *</Label>
         <Input
@@ -101,6 +125,27 @@ export default function InstitutionForm() {
         />
         <p className="mt-1 text-xs text-muted-foreground">
           For future email-domain validation.
+        </p>
+      </div>
+      <div>
+        <Label htmlFor="allow_external_collaborators">Study collaborators *</Label>
+        <select
+          id="allow_external_collaborators"
+          name="allow_external_collaborators"
+          required
+          defaultValue="true"
+          className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        >
+          <option value="true">
+            Allow external collaborators (people can be on a study without joining the institution)
+          </option>
+          <option value="false">
+            Institution members only (everyone on a study must belong to this institution)
+          </option>
+        </select>
+        <p className="mt-1 text-xs text-muted-foreground">
+          You can change this later in institution settings. Switching to &quot;members only&quot; is blocked while
+          external collaborators remain on any study under this institution.
         </p>
       </div>
       <div className="flex gap-2">

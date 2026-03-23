@@ -37,7 +37,10 @@ export default async function InvitesPage() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Pending Invites</h1>
         <p className="mt-2 text-gray-600">
-          Accept or decline invitations to join studies and institutions.
+          When you are signed in, <strong>accept study and institution invites here</strong>—you do
+          not need the original email link. Email links are most useful for people who still need to
+          create an account; you may still receive email reminders about pending invites when outbound
+          mail is configured (e.g. Resend).
         </p>
       </div>
 

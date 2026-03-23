@@ -2,7 +2,7 @@
 // All audit events are append-only and immutable
 
 import { createClient } from './server';
-import { AuditActionType, SYSTEM_ACTOR_ID, SystemActionMetadata } from '@/lib/types';
+import { AuditActionType, SystemActionMetadata } from '@/lib/types';
 
 /**
  * Create an audit event
@@ -19,7 +19,7 @@ export async function createAuditEvent(
   metadata: Record<string, any> = {}
 ): Promise<string> {
   const supabase = await createClient();
-  
+
   const { data, error } = await supabase.rpc('create_audit_event', {
     p_study_id: studyId,
     p_actor_id: actorId,
@@ -40,7 +40,8 @@ export async function createAuditEvent(
 
 /**
  * Create a system/AI action audit event
- * For automated actions that need to be transparent
+ * For automated actions that need to be transparent.
+ * Uses null actor_id (FK to auth.users); human context lives in metadata (e.g. requested_by).
  */
 export async function createSystemAuditEvent(
   studyId: string | null,
@@ -53,7 +54,7 @@ export async function createSystemAuditEvent(
 ): Promise<string> {
   return createAuditEvent(
     studyId,
-    SYSTEM_ACTOR_ID,
+    null,
     actionType,
     targetEntityType,
     targetEntityId,

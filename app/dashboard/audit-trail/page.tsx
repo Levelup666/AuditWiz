@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { getAllAuditEvents } from '@/lib/supabase/audit'
 import { SYSTEM_ACTOR_ID } from '@/lib/types'
-import { ACTION_BADGE_STYLES, formatActionType } from '@/lib/audit-trail'
+import { ACTION_BADGE_STYLES, formatActionType, isSystemAuditActor } from '@/lib/audit-trail'
 import AuditTrailFilters from '@/components/dashboard/audit-trail-filters'
 
 async function getActorEmails(actorIds: string[]): Promise<Record<string, string>> {
@@ -137,7 +137,11 @@ export default async function AuditTrailPage({
                             </Link>
                           ) : null}
                         </div>
-                        {event.actor_id === SYSTEM_ACTOR_ID && (
+                        {isSystemAuditActor({
+                          actor_id: event.actor_id as string | null,
+                          action_type: String(event.action_type),
+                          metadata: event.metadata,
+                        }) && (
                           <Badge variant="outline" className="bg-orange-50 w-fit">
                             System Action
                           </Badge>
@@ -153,7 +157,12 @@ export default async function AuditTrailPage({
                             </span>
                           ) : null}
                         </p>
-                        {event.actor_id && event.actor_id !== SYSTEM_ACTOR_ID ? (
+                        {event.actor_id &&
+                        !isSystemAuditActor({
+                          actor_id: event.actor_id as string | null,
+                          action_type: String(event.action_type),
+                          metadata: event.metadata,
+                        }) ? (
                             <p>
                               <strong>Actor:</strong>{' '}
                               {actorEmails[String(event.actor_id)] ??
@@ -163,7 +172,11 @@ export default async function AuditTrailPage({
                                 : ''}
                             </p>
                           ) : null}
-                        {event.actor_id === SYSTEM_ACTOR_ID &&
+                        {isSystemAuditActor({
+                          actor_id: event.actor_id as string | null,
+                          action_type: String(event.action_type),
+                          metadata: event.metadata,
+                        }) &&
                         (event.metadata as Record<string, unknown>)?.model_version ? (
                           <p>
                             <strong>AI Model:</strong>{' '}

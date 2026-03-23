@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { canManageInstitution } from '@/lib/supabase/permissions'
 import InstitutionSettingsForm from '@/components/institutions/institution-settings-form'
+import { institutionAllowsExternalCollaborators } from '@/lib/institution-collaboration'
 
 interface SettingsPageProps {
   params: Promise<{ id: string }>
@@ -22,7 +23,7 @@ export default async function InstitutionSettingsPage({ params }: SettingsPagePr
 
   const { data: institution, error } = await supabase
     .from('institutions')
-    .select('id, name, description, domain')
+    .select('id, name, description, domain, metadata')
     .eq('id', id)
     .single()
 
@@ -63,6 +64,13 @@ export default async function InstitutionSettingsPage({ params }: SettingsPagePr
           name: institution.name,
           description: institution.description ?? '',
           domain: institution.domain ?? '',
+          researchField:
+            typeof institution.metadata === 'object' &&
+            institution.metadata &&
+            typeof (institution.metadata as { research_field?: string }).research_field === 'string'
+              ? (institution.metadata as { research_field: string }).research_field
+              : '',
+          allowExternalCollaborators: institutionAllowsExternalCollaborators(institution.metadata),
         }}
       />
     </div>

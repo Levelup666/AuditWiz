@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 import type { StudyStatus } from '@/lib/types'
+import { canCreateStudyInInstitution } from '@/lib/supabase/permissions'
 
 export async function createStudy(formData: FormData) {
   const supabase = await createClient()
@@ -21,18 +22,24 @@ export async function createStudy(formData: FormData) {
   const title = formData.get('title') as string
   const description = (formData.get('description') as string) || null
   const status = (formData.get('status') as StudyStatus) || 'draft'
-  const institutionId = (formData.get('institution_id') as string)?.trim() || null
+  const institutionId = (formData.get('institution_id') as string)?.trim() || ''
 
   if (!title?.trim()) {
     return { error: 'Title is required' }
   }
 
-  if (institutionId) {
-    const canCreate = await import('@/lib/supabase/permissions').then((m) =>
-      m.canCreateStudyInInstitution(userId, institutionId)
-    )
-    if (!canCreate) {
-      return { error: 'You do not have permission to create studies in this institution' }
+  if (!institutionId) {
+    return {
+      error:
+        'An institution is required. You must be an institution admin to create a study—complete onboarding or ask an institution admin to promote you.',
+    }
+  }
+
+  const canCreate = await canCreateStudyInInstitution(userId, institutionId)
+  if (!canCreate) {
+    return {
+      error:
+        'You do not have permission to create studies in this institution. Only institution admins can create studies.',
     }
   }
 
@@ -42,7 +49,7 @@ export async function createStudy(formData: FormData) {
       title: title.trim(),
       description: description?.trim() || null,
       status,
-      institution_id: institutionId || null,
+      institution_id: institutionId,
       created_by: userId,
     })
     .select('id')
@@ -68,6 +75,7 @@ export async function createStudy(formData: FormData) {
     title: title.trim(),
     description: description?.trim() ?? null,
     status,
+    institution_id: institutionId,
   })
 
   await createAuditEvent(
@@ -78,7 +86,7 @@ export async function createStudy(formData: FormData) {
     study.id,
     null,
     newStateHash,
-    { title: title.trim(), status }
+    { title: title.trim(), status, institution_id: institutionId }
   )
 
   revalidatePath('/studies')

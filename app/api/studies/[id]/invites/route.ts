@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { canManageStudyMembers } from '@/lib/supabase/permissions'
+import { canManageStudyMembers, isActiveInstitutionMember } from '@/lib/supabase/permissions'
+import { getStudyCollaborationPolicy } from '@/lib/study-institution-policy'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 
@@ -117,6 +118,21 @@ export async function POST(
       {
         error:
           'You must sign in with the ORCID or email this invite was sent to in order to accept.',
+      },
+      { status: 403 }
+    )
+  }
+
+  const policy = await getStudyCollaborationPolicy(studyId)
+  if (
+    policy.institutionId &&
+    !policy.allowExternalCollaborators &&
+    !(await isActiveInstitutionMember(user.id, policy.institutionId))
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          "This study's institution only allows institution members on studies. Ask an admin to invite you to the institution and accept that invite first, then return here to accept the study invite.",
       },
       { status: 403 }
     )

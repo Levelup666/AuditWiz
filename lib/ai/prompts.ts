@@ -3,12 +3,14 @@
  * Kept separate for easy tuning and future localization.
  */
 
+import { recordContentForPrompt } from '@/lib/ai/record-content-prompt'
+
 export function getRecordSummarizationPrompt(
   recordNumber: string,
   version: number,
   content: Record<string, unknown>
 ): string {
-  const contentStr = JSON.stringify(content, null, 2)
+  const contentStr = JSON.stringify(recordContentForPrompt(content), null, 2)
   return `Summarize this research record in 2-4 sentences. Focus on the key findings, data, or context. Be concise and factual.
 
 Record: ${recordNumber} (Version ${version})
@@ -26,7 +28,7 @@ export function getComplianceCheckPrompt(
   content: Record<string, unknown>,
   rules?: string[]
 ): string {
-  const contentStr = JSON.stringify(content, null, 2)
+  const contentStr = JSON.stringify(recordContentForPrompt(content), null, 2)
   const rulesSection = rules?.length
     ? `\nCheck against these rules:\n${rules.map((r) => `- ${r}`).join('\n')}`
     : ''

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import StudiesList from '@/components/studies/studies-list'
+import { canUserCreateStudy } from '@/lib/supabase/permissions'
 
 interface StudiesPageProps {
   searchParams: Promise<{ status?: string; institution?: string }>
@@ -20,6 +21,8 @@ export default async function StudiesPage({ searchParams }: StudiesPageProps) {
   }
 
   const sp = await searchParams
+
+  const showNewStudy = await canUserCreateStudy(user.id)
 
   const { data: institutionMembers } = await supabase
     .from('institution_members')
@@ -46,12 +49,18 @@ export default async function StudiesPage({ searchParams }: StudiesPageProps) {
             Manage your research studies and records
           </p>
         </div>
-        <Link href="/studies/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New Study
+        {showNewStudy ? (
+          <Link href="/studies/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Study
+            </Button>
+          </Link>
+        ) : (
+          <Button variant="outline" asChild>
+            <Link href="/institutions">Institutions (admin required to create studies)</Link>
           </Button>
-        </Link>
+        )}
       </div>
 
       <Card>

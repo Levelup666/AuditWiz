@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/lib/toast'
 import { updateInstitution } from '@/app/institutions/[id]/settings/actions'
+import { INSTITUTION_RESEARCH_TYPES } from '@/lib/institution-research-types'
 
 function SubmitButton() {
   const { pending } = useFormStatus()
@@ -23,6 +24,8 @@ interface InstitutionSettingsFormProps {
     name: string
     description: string
     domain: string
+    researchField: string
+    allowExternalCollaborators: boolean
   }
 }
 
@@ -40,8 +43,30 @@ export default function InstitutionSettingsForm({
   }
 
   return (
-    <form action={handleSubmit} className="space-y-6 max-w-md">
+    <form action={handleSubmit} className="space-y-6 max-w-xl">
       <div className="space-y-4">
+        <div>
+          <Label htmlFor="research_field">Primary research field *</Label>
+          <select
+            id="research_field"
+            name="research_field"
+            required
+            defaultValue={initialData.researchField || ''}
+            className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="" disabled>
+              Select a research area
+            </option>
+            {INSTITUTION_RESEARCH_TYPES.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Main domain for this institution. Choose &quot;Other / general research&quot; if needed.
+          </p>
+        </div>
         <div>
           <Label htmlFor="name">Name *</Label>
           <Input
@@ -77,6 +102,28 @@ export default function InstitutionSettingsForm({
           />
           <p className="text-xs text-muted-foreground mt-1">
             For future email-domain validation
+          </p>
+        </div>
+        <div>
+          <Label htmlFor="allow_external_collaborators">Study collaborators *</Label>
+          <select
+            id="allow_external_collaborators"
+            name="allow_external_collaborators"
+            required
+            defaultValue={initialData.allowExternalCollaborators ? 'true' : 'false'}
+            className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="true">
+              Allow external collaborators (study-only access without institution membership)
+            </option>
+            <option value="false">
+              Institution members only (block external collaborators; stricter)
+            </option>
+          </select>
+          <p className="mt-1 text-xs text-muted-foreground">
+            If you switch to institution members only, you cannot save while any study in this
+            institution still has participants who are not institution members—invite them to the
+            institution or remove them from studies first.
           </p>
         </div>
       </div>

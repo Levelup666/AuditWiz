@@ -2,7 +2,7 @@ import { getAuditTrail } from '@/lib/supabase/audit'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Badge } from '@/components/ui/badge'
 import { SYSTEM_ACTOR_ID } from '@/lib/types'
-import { ACTION_BADGE_STYLES, formatActionType } from '@/lib/audit-trail'
+import { ACTION_BADGE_STYLES, formatActionType, isSystemAuditActor } from '@/lib/audit-trail'
 
 interface RecordAuditTrailProps {
   recordId: string
@@ -68,14 +68,23 @@ export default async function RecordAuditTrail({ recordId }: RecordAuditTrailPro
                     {new Date(String(event.timestamp)).toLocaleString()}
                   </span>
                 </div>
-                {event.actor_id === SYSTEM_ACTOR_ID && (
+                {isSystemAuditActor({
+                  actor_id: event.actor_id as string | null,
+                  action_type: String(event.action_type),
+                  metadata: event.metadata,
+                }) && (
                   <Badge variant="outline" className="bg-orange-50 w-fit">
                     System Action
                   </Badge>
                 )}
               </div>
               <div className="mt-2 space-y-1 text-sm">
-                {event.actor_id && event.actor_id !== SYSTEM_ACTOR_ID ? (
+                {event.actor_id &&
+                !isSystemAuditActor({
+                  actor_id: event.actor_id as string | null,
+                  action_type: String(event.action_type),
+                  metadata: event.metadata,
+                }) ? (
                   <p>
                     <strong>Actor:</strong>{' '}
                     {actorEmails[String(event.actor_id)] ??
@@ -85,7 +94,11 @@ export default async function RecordAuditTrail({ recordId }: RecordAuditTrailPro
                       : ''}
                   </p>
                 ) : null}
-                {event.actor_id === SYSTEM_ACTOR_ID &&
+                {isSystemAuditActor({
+                  actor_id: event.actor_id as string | null,
+                  action_type: String(event.action_type),
+                  metadata: event.metadata,
+                }) &&
                 (event.metadata as Record<string, unknown>)?.model_version ? (
                   <p>
                     <strong>AI Model:</strong>{' '}

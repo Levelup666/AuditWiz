@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { canManageInstitution } from '@/lib/supabase/permissions'
 import { Users, Settings, FolderOpen } from 'lucide-react'
+import { getInstitutionResearchFieldLabel } from '@/lib/institution-research-types'
+import { institutionAllowsExternalCollaborators } from '@/lib/institution-collaboration'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -33,6 +35,16 @@ export default async function InstitutionDashboardPage({ params }: PageProps) {
   }
 
   const isAdmin = await canManageInstitution(user.id, id)
+
+  const researchFieldKey =
+    institution.metadata &&
+    typeof institution.metadata === 'object' &&
+    !Array.isArray(institution.metadata) &&
+    typeof (institution.metadata as { research_field?: string }).research_field === 'string'
+      ? (institution.metadata as { research_field: string }).research_field
+      : null
+  const researchFieldLabel = getInstitutionResearchFieldLabel(researchFieldKey)
+  const externalCollabAllowed = institutionAllowsExternalCollaborators(institution.metadata)
 
   // Studies: user must be study_member OR (institution_member AND study belongs to institution)
   // For dashboard we show institution's studies; user can only open those they're study_member of
@@ -71,6 +83,18 @@ export default async function InstitutionDashboardPage({ params }: PageProps) {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">{institution.name}</h1>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {researchFieldLabel && (
+              <Badge variant="secondary" className="font-normal">
+                {researchFieldLabel}
+              </Badge>
+            )}
+            <Badge variant="outline" className="font-normal">
+              {externalCollabAllowed
+                ? 'External study collaborators allowed'
+                : 'Institution members only on studies'}
+            </Badge>
+          </div>
           {institution.description && (
             <p className="mt-2 text-gray-600">{institution.description}</p>
           )}

@@ -3,6 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Plus, Building2 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { getInstitutionResearchFieldLabel } from '@/lib/institution-research-types'
 
 export default async function InstitutionsPage() {
   const supabase = await createClient()
@@ -19,7 +21,7 @@ export default async function InstitutionsPage() {
     .select(`
       id,
       role,
-      institution:institutions(id, name, slug, description)
+      institution:institutions(id, name, slug, description, metadata)
     `)
     .eq('user_id', user.id)
     .is('revoked_at', null)
@@ -63,13 +65,26 @@ export default async function InstitutionsPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {institutions.map((inst: any) => (
+              {institutions.map((inst: any) => {
+                const rf =
+                  inst.metadata &&
+                  typeof inst.metadata === 'object' &&
+                  typeof inst.metadata.research_field === 'string'
+                    ? inst.metadata.research_field
+                    : null
+                const rfLabel = getInstitutionResearchFieldLabel(rf)
+                return (
                 <div
                   key={inst.id}
                   className="flex items-center justify-between rounded-lg border p-4"
                 >
                   <div>
                     <p className="font-medium">{inst.name}</p>
+                    {rfLabel && (
+                      <Badge variant="secondary" className="mt-1 font-normal text-xs">
+                        {rfLabel}
+                      </Badge>
+                    )}
                     {inst.description && (
                       <p className="text-sm text-muted-foreground mt-1">{inst.description}</p>
                     )}
@@ -79,7 +94,8 @@ export default async function InstitutionsPage() {
                     <Link href={`/institutions/${inst.id}`}>View</Link>
                   </Button>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </CardContent>

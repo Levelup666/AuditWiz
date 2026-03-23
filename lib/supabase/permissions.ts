@@ -169,3 +169,47 @@ export async function canCreateStudyInInstitution(
 ): Promise<boolean> {
   return canManageInstitution(userId, institutionId);
 }
+
+/**
+ * Institution IDs where the user is an active admin (can create studies under that org).
+ */
+export async function getInstitutionIdsWhereUserIsAdmin(
+  userId: string
+): Promise<string[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('institution_members')
+    .select('institution_id')
+    .eq('user_id', userId)
+    .eq('role', 'admin')
+    .is('revoked_at', null);
+
+  if (error || !data?.length) return [];
+  return [...new Set(data.map((r) => r.institution_id))];
+}
+
+/**
+ * True if the user can create at least one new study (admin of ≥1 institution).
+ */
+export async function canUserCreateStudy(userId: string): Promise<boolean> {
+  const ids = await getInstitutionIdsWhereUserIsAdmin(userId);
+  return ids.length > 0;
+}
+
+/**
+ * True if the user is an active institution member (admin or member role).
+ */
+export async function isActiveInstitutionMember(
+  userId: string,
+  institutionId: string
+): Promise<boolean> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('institution_members')
+    .select('id')
+    .eq('institution_id', institutionId)
+    .eq('user_id', userId)
+    .is('revoked_at', null)
+    .maybeSingle();
+  return Boolean(data);
+}

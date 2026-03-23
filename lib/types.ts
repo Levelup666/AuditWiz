@@ -31,7 +31,8 @@ export interface Institution {
   slug: string;
   description: string | null;
   domain: string | null;
-  metadata: { [key: string]: any };
+  /** e.g. metadata.research_field — see lib/institution-research-types.ts */
+  metadata: { [key: string]: any; research_field?: string };
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -180,14 +181,21 @@ export interface BlockchainAnchor {
 export const SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
 
 // Custom field type for record form (add-your-own fields)
-export type CustomFieldType = 'text' | 'integer' | 'number' | 'date' | 'boolean';
+export type CustomFieldType = 'text' | 'integer' | 'number' | 'date' | 'boolean' | 'list';
 
-// Record template for study metadata
+export interface RecordTemplateCustomFieldDef {
+  name: string;
+  type: CustomFieldType;
+  /** Scalar default, or string[] for list type */
+  value?: string | string[];
+}
+
 export interface RecordTemplateContentSchema {
   title?: string;
   summary?: string;
   notes?: string;
-  customFields: Array<{ name: string; type: CustomFieldType; value?: string }>;
+  /** May be missing on older saved study templates */
+  customFields?: RecordTemplateCustomFieldDef[];
 }
 
 export interface RecordTemplate {
