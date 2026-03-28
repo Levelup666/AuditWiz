@@ -82,19 +82,6 @@ export default function NewStudyForm({
             rows={4}
           />
         </div>
-        <div>
-          <Label htmlFor="status">Status</Label>
-          <select
-            id="status"
-            name="status"
-            className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            <option value="draft">Draft</option>
-            <option value="active">Active</option>
-            <option value="completed">Completed</option>
-            <option value="archived">Archived</option>
-          </select>
-        </div>
       </div>
       <div className="flex gap-2">
         <SubmitButton />

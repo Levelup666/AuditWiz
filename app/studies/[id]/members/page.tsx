@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { canManageStudyMembers } from '@/lib/supabase/permissions'
+import { getStudyCollaborationPolicy } from '@/lib/study-institution-policy'
 import StudyMembersManager from '@/components/studies/study-members-manager'
 
 interface MembersPageProps {
@@ -31,6 +32,7 @@ export default async function StudyMembersPage({ params }: MembersPageProps) {
   }
 
   const canManage = await canManageStudyMembers(user.id, studyId)
+  const collaborationPolicy = await getStudyCollaborationPolicy(studyId)
 
   return (
     <div className="space-y-6">
@@ -47,7 +49,12 @@ export default async function StudyMembersPage({ params }: MembersPageProps) {
       </div>
 
       {canManage ? (
-        <StudyMembersManager studyId={studyId} />
+        <StudyMembersManager
+          studyId={studyId}
+          currentUserId={user.id}
+          institutionId={collaborationPolicy.institutionId}
+          allowExternalCollaborators={collaborationPolicy.allowExternalCollaborators}
+        />
       ) : (
         <p className="text-gray-500">You do not have permission to manage members.</p>
       )}

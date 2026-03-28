@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { generateHash } from '@/lib/crypto'
 import { canCreateRecord } from '@/lib/supabase/permissions'
+import { assertStudyIsActive } from '@/lib/supabase/study-status'
 
 export async function createRecord(studyId: string, formData: FormData) {
   const supabase = await createClient()
@@ -20,6 +21,11 @@ export async function createRecord(studyId: string, formData: FormData) {
   const allowed = await canCreateRecord(userId, studyId)
   if (!allowed) {
     return { error: 'You do not have permission to create records in this study' }
+  }
+
+  const activeCheck = await assertStudyIsActive(supabase, studyId)
+  if (!activeCheck.ok) {
+    return { error: activeCheck.error }
   }
 
   const recordNumber = formData.get('record_number') as string
@@ -94,6 +100,11 @@ export async function saveDraftRecord(
   const allowed = await canCreateRecord(user.id, studyId)
   if (!allowed) {
     return { error: 'You do not have permission to edit records in this study' }
+  }
+
+  const activeCheck = await assertStudyIsActive(supabase, studyId)
+  if (!activeCheck.ok) {
+    return { error: activeCheck.error }
   }
 
   const { data: record, error: fetchError } = await supabase

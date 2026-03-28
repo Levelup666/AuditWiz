@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { canApproveRecord, canReviewRecord } from '@/lib/supabase/permissions'
+import { assertStudyIsActive } from '@/lib/supabase/study-status'
 
 const VALID_INTENTS = ['review', 'approval', 'amendment', 'rejection'] as const
 
@@ -49,6 +50,11 @@ export async function POST(
 
   if (recordError || !record) {
     return NextResponse.json({ error: 'Record not found' }, { status: 404 })
+  }
+
+  const activeCheck = await assertStudyIsActive(supabase, record.study_id)
+  if (!activeCheck.ok) {
+    return NextResponse.json({ error: activeCheck.error }, { status: 403 })
   }
 
   const canApproveByRole = await canApproveRecord(user.id, record.study_id)

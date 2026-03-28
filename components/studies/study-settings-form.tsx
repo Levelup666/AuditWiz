@@ -11,9 +11,14 @@ import { toast } from '@/lib/toast'
 interface StudySettingsFormProps {
   studyId: string
   initial: StudySettingsInput
+  studyIsActive: boolean
 }
 
-export default function StudySettingsForm({ studyId, initial }: StudySettingsFormProps) {
+export default function StudySettingsForm({
+  studyId,
+  initial,
+  studyIsActive,
+}: StudySettingsFormProps) {
   const [pending, setPending] = useState(false)
   const [requireReview, setRequireReview] = useState(initial.require_review_before_approval)
   const [allowCreator, setAllowCreator] = useState(initial.allow_creator_approval)
@@ -49,6 +54,11 @@ export default function StudySettingsForm({ studyId, initial }: StudySettingsFor
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {!studyIsActive && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Workflow settings are read-only because this study is not active.
+            </p>
+          )}
           <div>
             <Label htmlFor="required_approval_count">Required approval count</Label>
             <Input
@@ -58,6 +68,7 @@ export default function StudySettingsForm({ studyId, initial }: StudySettingsFor
               min={1}
               defaultValue={initial.required_approval_count}
               className="mt-1 w-24"
+              disabled={!studyIsActive}
             />
             <p className="mt-1 text-xs text-gray-500">
               Number of distinct approvers who must sign with approval before a record is marked approved. Minimum 1.
@@ -69,6 +80,7 @@ export default function StudySettingsForm({ studyId, initial }: StudySettingsFor
               id="require_review_before_approval"
               checked={requireReview}
               onChange={(e) => setRequireReview(e.target.checked)}
+              disabled={!studyIsActive}
               className="h-4 w-4 rounded border-gray-300"
             />
             <Label htmlFor="require_review_before_approval" className="font-normal">
@@ -81,6 +93,7 @@ export default function StudySettingsForm({ studyId, initial }: StudySettingsFor
               id="allow_creator_approval"
               checked={allowCreator}
               onChange={(e) => setAllowCreator(e.target.checked)}
+              disabled={!studyIsActive}
               className="h-4 w-4 rounded border-gray-300"
             />
             <Label htmlFor="allow_creator_approval" className="font-normal">
@@ -93,6 +106,7 @@ export default function StudySettingsForm({ studyId, initial }: StudySettingsFor
               id="ai_enabled"
               checked={aiEnabled}
               onChange={(e) => setAiEnabled(e.target.checked)}
+              disabled={!studyIsActive}
               className="h-4 w-4 rounded border-gray-300"
             />
             <Label htmlFor="ai_enabled" className="font-normal">
@@ -102,7 +116,7 @@ export default function StudySettingsForm({ studyId, initial }: StudySettingsFor
         </CardContent>
       </Card>
       <div className="flex gap-2">
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || !studyIsActive}>
           {pending ? 'Saving...' : 'Save settings'}
         </Button>
         <Button type="button" variant="outline" onClick={() => window.history.back()}>

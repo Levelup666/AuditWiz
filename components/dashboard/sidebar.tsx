@@ -13,6 +13,7 @@ import {
   User,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isNavActive } from '@/components/navigation/is-nav-active'
 
 const navigation = [
   { name: 'Studies', href: '/studies', icon: FolderOpen },
@@ -39,7 +40,7 @@ export default function Sidebar() {
       </div>
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navigation.map((item) => {
-          const isActive = pathname?.startsWith(item.href)
+          const isActive = isNavActive(pathname, item.href, navigation)
           return (
             <Link
               key={item.name}

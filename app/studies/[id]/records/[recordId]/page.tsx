@@ -50,10 +50,11 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
 
   const { data: study } = await supabase
     .from('studies')
-    .select('metadata')
+    .select('metadata, status')
     .eq('id', id)
     .single()
   const aiEnabled = (study?.metadata as Record<string, unknown>)?.ai_enabled !== false
+  const studyIsActive = study?.status === 'active'
 
   // Check permissions
   const canAmend = await canCreateRecord(user.id, id)
@@ -76,7 +77,7 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
         .maybeSingle()
     : { data: null }
 
-  const isDraftEditable = record.status === 'draft' && canAmend
+  const isDraftEditable = record.status === 'draft' && canAmend && studyIsActive
 
   return (
     <div className="space-y-6">
@@ -114,20 +115,20 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          {canAmend && record.status !== 'approved' && (
+          {canAmend && studyIsActive && record.status !== 'approved' && (
             <AmendRecordButton studyId={id} recordId={record.id} currentContent={record.content} />
           )}
           <RecordStatusActions
             recordId={record.id}
             studyId={id}
             status={record.status}
-            canSubmit={canAmend}
-            canReject={canReject}
+            canSubmit={canAmend && studyIsActive}
+            canReject={canReject && studyIsActive}
           />
-          {canSign && (record.status === 'under_review' || record.status === 'submitted') && (
+          {canSign && studyIsActive && (record.status === 'under_review' || record.status === 'submitted') && (
             <SignRecordButton studyId={id} record={record} />
           )}
-          {record.status === 'approved' && (
+          {record.status === 'approved' && studyIsActive && (
             <AnchorRecordButton
               recordId={record.id}
               studyId={id}
@@ -138,7 +139,7 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
           <Button variant="outline" asChild>
             <Link href={`/verify/${record.id}`}>Verify Integrity</Link>
           </Button>
-          {canDelete && (record.status === 'draft' || record.status === 'rejected') && (
+          {canDelete && studyIsActive && (record.status === 'draft' || record.status === 'rejected') && (
             <DeleteRecordButton
               recordId={record.id}
               studyId={id}
@@ -209,7 +210,7 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
           <CardDescription>Attachments for this record</CardDescription>
         </CardHeader>
         <CardContent>
-          <RecordDocuments recordId={record.id} studyId={id} canUpload={canAmend} />
+          <RecordDocuments recordId={record.id} studyId={id} canUpload={canAmend && studyIsActive} />
         </CardContent>
       </Card>
 

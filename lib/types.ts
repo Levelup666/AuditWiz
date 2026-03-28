@@ -23,7 +23,8 @@ export type AuditActionType =
   | 'identity_linked'
   | 'share_created' | 'share_accessed'
   | 'ai_action' | 'system_action'
-  | 'blockchain_anchored';
+  | 'blockchain_anchored'
+  | 'invite_created' | 'invite_opened' | 'invite_accepted' | 'invite_rejected' | 'invite_expired';
 
 export interface Institution {
   id: string;

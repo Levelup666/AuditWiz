@@ -17,7 +17,9 @@ export default async function AcceptInstitutionInvitePage({ params }: PageProps)
   } = await supabase.auth.getUser()
 
   if (!user) {
-    redirect(`/auth/signin?redirectedFrom=/invites/institution/${inviteId}`)
+    redirect(
+      `/auth/signin?redirectedFrom=${encodeURIComponent(`/invites/institution/${inviteId}`)}&inviteNotice=${encodeURIComponent('Sign in to view this invite. If you were emailed a link, open that link for the best experience.')}`
+    )
   }
 
   const { data: invite, error } = await supabase
@@ -30,6 +32,7 @@ export default async function AcceptInstitutionInvitePage({ params }: PageProps)
       invited_at,
       expires_at,
       accepted_at,
+      revoked_at,
       institution:institutions(id, name, slug)
     `)
     .eq('id', inviteId)
@@ -37,6 +40,24 @@ export default async function AcceptInstitutionInvitePage({ params }: PageProps)
 
   if (error || !invite) {
     notFound()
+  }
+
+  if (invite.revoked_at) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <Card className="max-w-md">
+          <CardHeader>
+            <CardTitle>Invite revoked</CardTitle>
+            <CardDescription>This invitation is no longer valid.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" asChild>
+              <Link href="/studies">Go to Dashboard</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   if (invite.accepted_at) {

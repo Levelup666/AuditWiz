@@ -5,7 +5,6 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
-import type { StudyStatus } from '@/lib/types'
 import { canCreateStudyInInstitution } from '@/lib/supabase/permissions'
 
 export async function createStudy(formData: FormData) {
@@ -21,8 +20,8 @@ export async function createStudy(formData: FormData) {
 
   const title = formData.get('title') as string
   const description = (formData.get('description') as string) || null
-  const status = (formData.get('status') as StudyStatus) || 'draft'
   const institutionId = (formData.get('institution_id') as string)?.trim() || ''
+  const status = 'active' as const
 
   if (!title?.trim()) {
     return { error: 'Title is required' }

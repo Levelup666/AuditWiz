@@ -5,7 +5,6 @@ import { Filter } from 'lucide-react'
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
-  { value: 'draft', label: 'Draft' },
   { value: 'active', label: 'Active' },
   { value: 'completed', label: 'Completed' },
   { value: 'archived', label: 'Archived' },

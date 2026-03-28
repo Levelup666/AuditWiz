@@ -4,6 +4,7 @@ import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 import { anchorRecordToBlockchain } from '@/lib/blockchain'
 import { canApproveRecord } from '@/lib/supabase/permissions'
+import { assertStudyIsActive } from '@/lib/supabase/study-status'
 
 export async function POST(
   request: NextRequest,
@@ -34,6 +35,11 @@ export async function POST(
       { error: 'Only approved records can be anchored to the blockchain' },
       { status: 400 }
     )
+  }
+
+  const activeCheck = await assertStudyIsActive(supabase, record.study_id)
+  if (!activeCheck.ok) {
+    return NextResponse.json({ error: activeCheck.error }, { status: 403 })
   }
 
   const allowed = await canApproveRecord(user.id, record.study_id)

@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 import { canCreateRecord, canApproveRecord, canReviewRecord } from '@/lib/supabase/permissions'
+import { assertStudyIsActive } from '@/lib/supabase/study-status'
 
 const ALLOWED_STATUSES = ['submitted', 'under_review', 'rejected'] as const
 
@@ -41,6 +42,11 @@ export async function POST(
   }
 
   const studyId = record.study_id
+
+  const activeCheck = await assertStudyIsActive(supabase, studyId)
+  if (!activeCheck.ok) {
+    return NextResponse.json({ error: activeCheck.error }, { status: 403 })
+  }
 
   if (status === 'under_review' || status === 'submitted') {
     const allowed = await canCreateRecord(user.id, studyId)

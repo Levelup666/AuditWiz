@@ -62,12 +62,14 @@ export default async function StudiesList({
     .select('id, study_id, record_number, version, status')
     .in('study_id', studyIds)
 
-  const statsByStudy: Record<string, { total: number; draft: number; submitted: number; approved: number }> = {}
+  const recordCountByStudy: Record<string, number> = {}
+  const hasUnapprovedByStudy: Record<string, boolean> = {}
   studyIds.forEach((id: string) => {
-    statsByStudy[id] = { total: 0, draft: 0, submitted: 0, approved: 0 }
+    recordCountByStudy[id] = 0
+    hasUnapprovedByStudy[id] = false
   })
   const latestByRecord: Record<string, any> = {}
-  ;(records || []).forEach((r: any) => {
+    ;(records || []).forEach((r: any) => {
     const key = `${r.study_id}-${r.record_number}`
     const existing = latestByRecord[key]
     if (!existing || r.version > existing.version) {
@@ -75,12 +77,11 @@ export default async function StudiesList({
     }
   })
   Object.values(latestByRecord).forEach((r: any) => {
-    const s = statsByStudy[r.study_id]
-    if (s) {
-      s.total++
-      if (r.status === 'draft') s.draft++
-      else if (r.status === 'submitted' || r.status === 'under_review') s.submitted++
-      else if (r.status === 'approved') s.approved++
+    if (recordCountByStudy[r.study_id] !== undefined) {
+      recordCountByStudy[r.study_id]++
+    }
+    if (r.status !== 'approved') {
+      hasUnapprovedByStudy[r.study_id] = true
     }
   })
 
@@ -117,6 +118,7 @@ export default async function StudiesList({
             <TableHead>Title</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Records</TableHead>
+            <TableHead>Pending approval</TableHead>
             <TableHead>Your Role</TableHead>
             <TableHead>Last activity</TableHead>
             <TableHead>Documentation</TableHead>
@@ -125,20 +127,23 @@ export default async function StudiesList({
         </TableHeader>
         <TableBody>
           {studies.map((study: any) => {
-            const stats = statsByStudy[study.id] ?? { total: 0, draft: 0, submitted: 0, approved: 0 }
+            const recordTotal = recordCountByStudy[study.id] ?? 0
+            const hasUnapproved = hasUnapprovedByStudy[study.id] ?? false
             return (
               <TableRow key={study.id}>
                 <TableCell className="font-medium">{study.title}</TableCell>
                 <TableCell>{getStatusBadge(study.status)}</TableCell>
                 <TableCell>
-                  <span className="text-sm">
-                    {stats.total} total
-                    {(stats.draft > 0 || stats.submitted > 0 || stats.approved > 0) && (
-                      <span className="text-gray-500 ml-1">
-                        ({stats.draft} draft, {stats.submitted} in review, {stats.approved} approved)
-                      </span>
-                    )}
-                  </span>
+                  <span className="text-sm tabular-nums">{recordTotal}</span>
+                </TableCell>
+                <TableCell>
+                  {hasUnapproved ? (
+                    <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">
+                      Unapproved records
+                    </Badge>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  )}
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline">{study.study_members[0]?.role || 'member'}</Badge>

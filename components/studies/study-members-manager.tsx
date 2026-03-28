@@ -14,7 +14,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
+import {
+  isStudyPrivilegedRole,
+  STUDY_REVOKE,
+} from '@/lib/supabase/member-revocation'
+import { cn } from '@/lib/utils'
 
 interface Member {
   id: string
@@ -31,11 +37,83 @@ interface Member {
   can_share?: boolean
 }
 
-interface StudyMembersManagerProps {
-  studyId: string
+type InstitutionCandidate = {
+  user_id: string
+  email: string
+  display_name: string | null
+  orcid_id: string | null
 }
 
-export default function StudyMembersManager({ studyId }: StudyMembersManagerProps) {
+interface StudyMembersManagerProps {
+  studyId: string
+  currentUserId: string
+  /** When set, internal-member picker loads from the institution */
+  institutionId: string | null
+  allowExternalCollaborators: boolean
+}
+
+function studyRevokeDisabled(
+  m: Member,
+  members: Member[],
+  currentUserId: string
+): { disabled: boolean; title?: string } {
+  if (m.user_id === currentUserId) {
+    return { disabled: true, title: STUDY_REVOKE.self }
+  }
+  if (members.length <= 1) {
+    return { disabled: true, title: STUDY_REVOKE.lastMember }
+  }
+  const privileged = members.filter((x) => isStudyPrivilegedRole(x.role))
+  if (privileged.length <= 1 && isStudyPrivilegedRole(m.role)) {
+    return { disabled: true, title: STUDY_REVOKE.lastPrivileged }
+  }
+  return { disabled: false }
+}
+
+function candidateLabel(c: InstitutionCandidate): string {
+  const name = c.display_name?.trim()
+  if (name && c.email) return `${name} · ${c.email}`
+  if (name) return name
+  return c.email || c.user_id.slice(0, 8) + '…'
+}
+
+function toastStudyInviteEmail(
+  data: {
+    message?: string
+    pending?: boolean
+    email_dispatched?: boolean
+    email_dispatch_message?: string
+    email_supabase_error?: { code?: string }
+  },
+  variant: 'member_added' | 'invite_pending'
+) {
+  const hint =
+    data.email_supabase_error?.code &&
+    typeof data.email_supabase_error.code === 'string'
+      ? ` (Auth error code: ${data.email_supabase_error.code})`
+      : ''
+  if (data.email_dispatched === false && data.email_dispatch_message) {
+    toast.warning(
+      variant === 'invite_pending' ? 'Invite created' : 'Member added',
+      data.email_dispatch_message + hint
+    )
+    return
+  }
+  toast.success(
+    variant === 'invite_pending' ? 'Pending invite created' : 'Member added',
+    data.message ??
+      (variant === 'invite_pending'
+        ? 'Pending invite created'
+        : 'They can also open Invites in the app.')
+  )
+}
+
+export default function StudyMembersManager({
+  studyId,
+  currentUserId,
+  institutionId,
+  allowExternalCollaborators,
+}: StudyMembersManagerProps) {
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState('')
@@ -43,6 +121,30 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
   const [role, setRole] = useState('reviewer')
   const [addLoading, setAddLoading] = useState(false)
   const [revokingId, setRevokingId] = useState<string | null>(null)
+
+  const [candidates, setCandidates] = useState<InstitutionCandidate[]>([])
+  const [candidatesLoading, setCandidatesLoading] = useState(false)
+  const [selectedUserId, setSelectedUserId] = useState('')
+
+  const useInstitutionPicker = Boolean(institutionId)
+  const showModeToggle = useInstitutionPicker && allowExternalCollaborators
+  const [addMode, setAddMode] = useState<'internal' | 'external'>('internal')
+
+  const effectiveMode = showModeToggle ? addMode : useInstitutionPicker ? 'internal' : 'external'
+
+  useEffect(() => {
+    setAddMode(
+      institutionId && allowExternalCollaborators
+        ? 'internal'
+        : institutionId
+          ? 'internal'
+          : 'external'
+    )
+    setEmail('')
+    setSelectedUserId('')
+    setOrcidId('')
+    setRole('reviewer')
+  }, [studyId, institutionId, allowExternalCollaborators])
 
   const fetchMembers = async () => {
     setLoading(true)
@@ -58,14 +160,81 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
     }
   }
 
+  const fetchCandidates = async () => {
+    if (!useInstitutionPicker) return
+    setCandidatesLoading(true)
+    try {
+      const res = await fetch(`/api/studies/${studyId}/member-candidates`)
+      if (!res.ok) throw new Error(await res.json().then((b) => b.error || res.statusText))
+      const data = await res.json()
+      setCandidates(data.candidates ?? [])
+    } catch (e) {
+      toast.error(
+        'Could not load institution members',
+        e instanceof Error ? e.message : 'Request failed'
+      )
+      setCandidates([])
+    } finally {
+      setCandidatesLoading(false)
+    }
+  }
+
   useEffect(() => {
     fetchMembers()
   }, [studyId])
+
+  useEffect(() => {
+    if (useInstitutionPicker) {
+      fetchCandidates()
+    }
+  }, [studyId, useInstitutionPicker])
+
+  const emptyCandidates =
+    useInstitutionPicker && !candidatesLoading && candidates.length === 0
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
     const emailTrim = email.trim()
     const orcidTrim = orcidId.trim()
+
+    if (effectiveMode === 'internal' && useInstitutionPicker && selectedUserId) {
+      setAddLoading(true)
+      try {
+        const body: {
+          user_id: string
+          role: string
+          orcid_id?: string
+        } = { user_id: selectedUserId, role }
+        if (orcidTrim) body.orcid_id = orcidTrim
+        const res = await fetch(`/api/studies/${studyId}/members`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || res.statusText)
+        setSelectedUserId('')
+        setOrcidId('')
+        setRole('reviewer')
+        toastStudyInviteEmail(data, 'member_added')
+        fetchMembers()
+        fetchCandidates()
+      } catch (err) {
+        toast.error('Add failed', err instanceof Error ? err.message : 'Failed to add member')
+      } finally {
+        setAddLoading(false)
+      }
+      return
+    }
+
+    if (effectiveMode === 'internal' && useInstitutionPicker && !emailTrim && !orcidTrim) {
+      toast.error(
+        'Choose someone or use ORCID',
+        'Select an institution member, or enter an ORCID ID (or email when allowed).'
+      )
+      return
+    }
+
     if (!emailTrim && !orcidTrim) return
     setAddLoading(true)
     try {
@@ -82,12 +251,13 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
       setEmail('')
       setOrcidId('')
       setRole('reviewer')
-      toast.success(
-        data.pending
-          ? (data.message ?? 'Pending invite created')
-          : (data.message ?? 'Member added')
-      )
+      if (data.pending) {
+        toastStudyInviteEmail(data, 'invite_pending')
+      } else {
+        toastStudyInviteEmail(data, 'member_added')
+      }
       fetchMembers()
+      fetchCandidates()
     } catch (e) {
       toast.error('Add failed', e instanceof Error ? e.message : 'Failed to add member')
     } finally {
@@ -107,8 +277,12 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
       if (!res.ok) throw new Error(data.error || res.statusText)
       toast.success('Member revoked')
       fetchMembers()
-    } catch {
-      toast.error('Revoke failed', 'Failed to revoke member')
+      fetchCandidates()
+    } catch (e) {
+      toast.error(
+        'Revoke failed',
+        e instanceof Error ? e.message : 'Failed to revoke member'
+      )
     } finally {
       setRevokingId(null)
     }
@@ -125,53 +299,180 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-sm text-muted-foreground max-w-3xl leading-relaxed">
         People with accounts can accept pending invites under <strong>Invites</strong> in the sidebar
-        without using email links. If the institution is set to <strong>members only</strong>, users
-        must join the institution before they can be added or accept a study invite.
+        without using email links.
+        {!useInstitutionPicker && (
+          <>
+            {' '}
+            This study is not linked to an institution; add people by email or ORCID as before.
+          </>
+        )}
+        {useInstitutionPicker && !allowExternalCollaborators && (
+          <>
+            {' '}
+            This institution only allows <strong>institution members</strong> on studies—choose someone
+            from the list below.
+          </>
+        )}
+        {useInstitutionPicker && allowExternalCollaborators && (
+          <>
+            {' '}
+            You may add <strong>institution members</strong> from the directory or send an{' '}
+            <strong>external invite</strong> by email when the institution allows it.
+          </>
+        )}
       </p>
-      <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-4 rounded-lg border p-4">
-        <div className="flex-1 min-w-[200px]">
-          <Label htmlFor="member-email">Email</Label>
-          <Input
-            id="member-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="user@example.com"
-            className="mt-1"
-          />
-        </div>
-        <div className="flex-1 min-w-[200px]">
-          <Label htmlFor="member-orcid">ORCID ID (optional)</Label>
-          <Input
-            id="member-orcid"
-            type="text"
-            value={orcidId}
-            onChange={(e) => setOrcidId(e.target.value)}
-            placeholder="0000-0001-2345-6789"
-            className="mt-1"
-          />
-        </div>
-        <div className="w-[140px]">
-          <Label htmlFor="member-role">Role</Label>
-          <select
-            id="member-role"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          >
-            <option value="creator">Creator</option>
-            <option value="reviewer">Reviewer</option>
-            <option value="approver">Approver</option>
-            <option value="auditor">Auditor</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-        <Button type="submit" disabled={addLoading}>
-          {addLoading ? 'Adding…' : 'Add Member'}
-        </Button>
-      </form>
+
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg">Add member</CardTitle>
+          <CardDescription>
+            Assign a role for this study. Optional ORCID can still be used for invite-by-ORCID when
+            you are not using the institution directory.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleAdd} className="space-y-5">
+            {showModeToggle && (
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-sm font-medium text-foreground">How to add</span>
+                <div
+                  className="inline-flex rounded-lg border border-input bg-muted/30 p-0.5"
+                  role="group"
+                  aria-label="Add member mode"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddMode('internal')
+                      setEmail('')
+                    }}
+                    className={cn(
+                      'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                      addMode === 'internal'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    Institution member
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddMode('external')
+                      setSelectedUserId('')
+                    }}
+                    className={cn(
+                      'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                      addMode === 'external'
+                        ? 'bg-background text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    External invite
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {effectiveMode === 'internal' && useInstitutionPicker && (
+              <div className="space-y-2">
+                <Label htmlFor="member-institution">Institution member</Label>
+                <div>
+                  <select
+                    id="member-institution"
+                    value={selectedUserId}
+                    onChange={(e) => setSelectedUserId(e.target.value)}
+                    disabled={candidatesLoading || emptyCandidates}
+                    className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <option value="">
+                      {candidatesLoading ? 'Loading…' : emptyCandidates ? 'No one available' : 'Select a person…'}
+                    </option>
+                    {candidates.map((c) => (
+                      <option key={c.user_id} value={c.user_id}>
+                        {candidateLabel(c)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {emptyCandidates && (
+                  <p className="text-sm text-muted-foreground">
+                    Every active institution member is already on this study, or there are no members
+                    in the institution yet.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {effectiveMode === 'external' && (
+              <div className="space-y-2">
+                <Label htmlFor="member-email">Email</Label>
+                <Input
+                  id="member-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  className="mt-1"
+                  autoComplete="email"
+                />
+              </div>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-2 sm:items-end">
+              <div className="space-y-2">
+                <Label htmlFor="member-orcid">ORCID ID (optional)</Label>
+                <Input
+                  id="member-orcid"
+                  type="text"
+                  value={orcidId}
+                  onChange={(e) => setOrcidId(e.target.value)}
+                  placeholder="0000-0001-2345-6789"
+                  className="mt-1"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="member-role">Role</Label>
+                <select
+                  id="member-role"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="creator">Creator</option>
+                  <option value="reviewer">Reviewer</option>
+                  <option value="approver">Approver</option>
+                  <option value="auditor">Auditor</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end border-t pt-4">
+              <Button
+                type="submit"
+                disabled={
+                  addLoading ||
+                  (effectiveMode === 'internal' &&
+                    useInstitutionPicker &&
+                    !selectedUserId &&
+                    !orcidId.trim()) ||
+                  (effectiveMode === 'external' && !email.trim() && !orcidId.trim())
+                }
+              >
+                {addLoading
+                  ? 'Adding…'
+                  : effectiveMode === 'internal' && useInstitutionPicker
+                    ? 'Add member'
+                    : 'Add or invite'}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
 
       <Table>
         <TableHeader>
@@ -184,32 +485,38 @@ export default function StudyMembersManager({ studyId }: StudyMembersManagerProp
           </TableRow>
         </TableHeader>
         <TableBody>
-          {members.map((m) => (
-            <TableRow key={m.id}>
-              <TableCell className="font-medium">{m.email}</TableCell>
-              <TableCell className="text-sm text-gray-600">{m.orcid_id ?? '—'}</TableCell>
-              <TableCell>
-                <Badge variant="outline">{m.role}</Badge>
-              </TableCell>
-              <TableCell className="text-sm text-gray-500">
-                {new Date(m.granted_at).toLocaleDateString()}
-              </TableCell>
-              <TableCell className="text-right">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleRevoke(m.id)}
-                  disabled={revokingId === m.id}
-                >
-                  {revokingId === m.id ? 'Revoking…' : 'Revoke'}
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
+          {members.map((m) => {
+            const revoke = studyRevokeDisabled(m, members, currentUserId)
+            return (
+              <TableRow key={m.id}>
+                <TableCell className="font-medium">{m.email}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {m.orcid_id ?? '—'}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="outline">{m.role}</Badge>
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {new Date(m.granted_at).toLocaleDateString()}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRevoke(m.id)}
+                    disabled={revoke.disabled || revokingId === m.id}
+                    title={revoke.title}
+                  >
+                    {revokingId === m.id ? 'Revoking…' : 'Revoke'}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
       {members.length === 0 && (
-        <p className="text-gray-500">No members yet. Add one above.</p>
+        <p className="text-muted-foreground">No members yet. Add one above.</p>
       )}
     </div>
   )

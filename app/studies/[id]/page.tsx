@@ -43,8 +43,19 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
 
   const canManageMembers = await canManageStudyMembers(user.id, id)
 
+  const studyIsActive = study.status === 'active'
+
   return (
     <div className="space-y-6">
+      {!studyIsActive && (
+        <div
+          className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          role="status"
+        >
+          This study is <span className="font-medium capitalize">{study.status}</span> and cannot be
+          edited.
+        </div>
+      )}
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">{study.title}</h1>
@@ -77,12 +88,12 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
       <StudyDocumentationCard
         studyId={id}
         documentation={study.documentation ?? null}
-        canEdit={canCreate}
+        canEdit={canCreate && studyIsActive}
       />
 
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold">Records</h2>
-        {canCreate && (
+        {canCreate && studyIsActive && (
           <Link href={`/studies/${id}/records/new`}>
             <Button>
               <Plus className="mr-2 h-4 w-4" />

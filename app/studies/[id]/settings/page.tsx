@@ -4,10 +4,12 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { canManageStudyMembers } from '@/lib/supabase/permissions'
 import StudySettingsForm from '@/components/studies/study-settings-form'
+import StudyStatusSection from '@/components/studies/study-status-section'
 import RecordTemplatesEditor from '@/components/studies/record-templates-editor'
 import DeleteStudyButton from '@/components/studies/delete-study-button'
 import { ChevronLeft } from 'lucide-react'
 import type { RecordTemplate } from '@/lib/types'
+import { getStudyCompletionEligibility } from '@/lib/study-completion-eligibility'
 
 interface SettingsPageProps {
   params: Promise<{ id: string }>
@@ -31,7 +33,9 @@ export default async function StudySettingsPage({ params }: SettingsPageProps) {
 
   const { data: study, error } = await supabase
     .from('studies')
-    .select('id, title, required_approval_count, require_review_before_approval, allow_creator_approval, metadata')
+    .select(
+      'id, title, status, required_approval_count, require_review_before_approval, allow_creator_approval, metadata'
+    )
     .eq('id', studyId)
     .single()
 
@@ -48,6 +52,9 @@ export default async function StudySettingsPage({ params }: SettingsPageProps) {
   }
 
   const recordTemplates = (metadata.record_templates ?? []) as RecordTemplate[]
+  const studyIsActive = study.status === 'active'
+
+  const completion = await getStudyCompletionEligibility(supabase, studyId)
 
   return (
     <div className="space-y-6">
@@ -64,8 +71,22 @@ export default async function StudySettingsPage({ params }: SettingsPageProps) {
           </p>
         </div>
       </div>
-      <StudySettingsForm studyId={studyId} initial={initial} />
-      <RecordTemplatesEditor studyId={studyId} initialTemplates={recordTemplates} />
+      <StudyStatusSection
+        studyId={studyId}
+        status={study.status}
+        canMarkCompleted={completion.canComplete}
+        completionBlockedReason={completion.reason}
+      />
+      <StudySettingsForm
+        studyId={studyId}
+        initial={initial}
+        studyIsActive={studyIsActive}
+      />
+      <RecordTemplatesEditor
+        studyId={studyId}
+        initialTemplates={recordTemplates}
+        studyIsActive={studyIsActive}
+      />
       <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6">
         <h2 className="text-lg font-semibold text-destructive">Danger Zone</h2>
         <p className="mt-1 text-sm text-muted-foreground">

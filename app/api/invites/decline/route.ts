@@ -1,0 +1,45 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { hashInviteToken } from '@/lib/invites/token'
+import { lookupInviteByTokenHash } from '@/lib/invites/lookup-invite-by-token'
+import { declineInviteByTokenForUser } from '@/lib/invites/decline-invite'
+
+export async function POST(request: NextRequest) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const rawToken = typeof body.token === 'string' ? body.token.trim() : ''
+  if (!rawToken) {
+    return NextResponse.json({ error: 'token is required' }, { status: 400 })
+  }
+
+  const admin = createAdminClient()
+  const tokenHash = hashInviteToken(rawToken)
+  const resolved = await lookupInviteByTokenHash(admin, tokenHash)
+
+  if (!resolved) {
+    return NextResponse.json({ error: 'Invite not found' }, { status: 404 })
+  }
+
+  const result = await declineInviteByTokenForUser(
+    admin,
+    supabase,
+    user.id,
+    user.email ?? undefined,
+    resolved
+  )
+
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status })
+  }
+
+  return NextResponse.json({ success: true })
+}

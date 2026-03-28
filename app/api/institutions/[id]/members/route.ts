@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { canManageInstitution } from '@/lib/supabase/permissions'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
+import { validateInstitutionMemberRevocation } from '@/lib/supabase/member-revocation'
 
 export async function GET(
   request: NextRequest,
@@ -93,6 +94,38 @@ export async function PATCH(
 
   if (fetchError || !member) {
     return NextResponse.json({ error: 'Member not found' }, { status: 404 })
+  }
+
+  const { count: memberCount, error: countErr } = await supabase
+    .from('institution_members')
+    .select('*', { count: 'exact', head: true })
+    .eq('institution_id', institutionId)
+    .is('revoked_at', null)
+
+  const { count: adminCount, error: adminErr } = await supabase
+    .from('institution_members')
+    .select('*', { count: 'exact', head: true })
+    .eq('institution_id', institutionId)
+    .is('revoked_at', null)
+    .eq('role', 'admin')
+
+  if (countErr || adminErr) {
+    return NextResponse.json(
+      { error: countErr?.message ?? adminErr?.message ?? 'Count failed' },
+      { status: 500 }
+    )
+  }
+
+  const decision = validateInstitutionMemberRevocation({
+    actorId: user.id,
+    targetUserId: member.user_id,
+    targetRole: member.role,
+    activeMemberCount: memberCount ?? 0,
+    activeAdminCount: adminCount ?? 0,
+  })
+
+  if (!decision.ok) {
+    return NextResponse.json({ error: decision.message }, { status: 403 })
   }
 
   const { error } = await supabase

@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Loader2 } from 'lucide-react'
+import { INSTITUTION_REVOKE } from '@/lib/supabase/member-revocation'
 
 interface Member {
   id: string
@@ -27,10 +28,30 @@ interface Member {
 
 interface InstitutionMembersManagerProps {
   institutionId: string
+  currentUserId: string
+}
+
+function institutionRemoveDisabled(
+  m: Member,
+  members: Member[],
+  currentUserId: string
+): { disabled: boolean; title?: string } {
+  if (m.user_id === currentUserId) {
+    return { disabled: true, title: INSTITUTION_REVOKE.self }
+  }
+  if (members.length <= 1) {
+    return { disabled: true, title: INSTITUTION_REVOKE.lastMember }
+  }
+  const admins = members.filter((x) => x.role === 'admin')
+  if (m.role === 'admin' && admins.length <= 1) {
+    return { disabled: true, title: INSTITUTION_REVOKE.lastAdmin }
+  }
+  return { disabled: false }
 }
 
 export default function InstitutionMembersManager({
   institutionId,
+  currentUserId,
 }: InstitutionMembersManagerProps) {
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
@@ -72,7 +93,26 @@ export default function InstitutionMembersManager({
       if (!res.ok) throw new Error(data.error || res.statusText)
       setEmail('')
       setRole('member')
-      toast.success('Invite sent')
+      if (data.email_dispatched) {
+        toast.success(
+          'Invite sent',
+          data.email_channel === 'supabase'
+            ? 'They should get an email from your Supabase Auth mailer (like sign-up confirmation), then can accept under Invites.'
+            : data.email_dispatch_message ??
+                'The recipient should receive an email shortly.'
+        )
+      } else {
+        const hint =
+          data.email_supabase_error?.code &&
+          typeof data.email_supabase_error.code === 'string'
+            ? ` (Auth error code: ${data.email_supabase_error.code})`
+            : ''
+        toast.warning(
+          'Invite created',
+          (data.email_dispatch_message ??
+            'Email was not sent. For existing accounts without Resend, ask them to sign in and open Invites.') + hint
+        )
+      }
       fetchMembers()
     } catch (e) {
       toast.error('Invite failed', e instanceof Error ? e.message : 'Failed to send invite')
@@ -93,8 +133,11 @@ export default function InstitutionMembersManager({
       if (!res.ok) throw new Error(data.error || res.statusText)
       toast.success('Member removed')
       fetchMembers()
-    } catch {
-      toast.error('Revoke failed', 'Failed to remove member')
+    } catch (e) {
+      toast.error(
+        'Revoke failed',
+        e instanceof Error ? e.message : 'Failed to remove member'
+      )
     } finally {
       setRevokingId(null)
     }
@@ -150,27 +193,31 @@ export default function InstitutionMembersManager({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {members.map((m) => (
-            <TableRow key={m.id}>
-              <TableCell className="font-medium">{m.email}</TableCell>
-              <TableCell>
-                <Badge variant="outline">{m.role}</Badge>
-              </TableCell>
-              <TableCell className="text-sm text-gray-500">
-                {new Date(m.granted_at).toLocaleDateString()}
-              </TableCell>
-              <TableCell className="text-right">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleRevoke(m.id)}
-                  disabled={revokingId === m.id}
-                >
-                  {revokingId === m.id ? 'Removing…' : 'Remove'}
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
+          {members.map((m) => {
+            const remove = institutionRemoveDisabled(m, members, currentUserId)
+            return (
+              <TableRow key={m.id}>
+                <TableCell className="font-medium">{m.email}</TableCell>
+                <TableCell>
+                  <Badge variant="outline">{m.role}</Badge>
+                </TableCell>
+                <TableCell className="text-sm text-gray-500">
+                  {new Date(m.granted_at).toLocaleDateString()}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleRevoke(m.id)}
+                    disabled={remove.disabled || revokingId === m.id}
+                    title={remove.title}
+                  >
+                    {revokingId === m.id ? 'Removing…' : 'Remove'}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
       {members.length === 0 && (

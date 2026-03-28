@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 import { canCreateRecord } from '@/lib/supabase/permissions'
+import { assertStudyIsActive } from '@/lib/supabase/study-status'
 
 export async function updateStudyDocumentation(studyId: string, documentation: string) {
   const supabase = await createClient()
@@ -21,6 +22,11 @@ export async function updateStudyDocumentation(studyId: string, documentation: s
   const allowed = await canCreateRecord(userId, studyId)
   if (!allowed) {
     return { error: 'You do not have permission to edit study documentation' }
+  }
+
+  const activeCheck = await assertStudyIsActive(supabase, studyId)
+  if (!activeCheck.ok) {
+    return { error: activeCheck.error }
   }
 
   const { data: study, error: fetchError } = await supabase

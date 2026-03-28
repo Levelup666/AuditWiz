@@ -1,8 +1,14 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import SignUpForm from '@/components/auth/signup-form'
+import { safeAppPath } from '@/lib/invites/safe-redirect'
 
-export default async function SignUpPage() {
+export default async function SignUpPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ email?: string; redirectedFrom?: string }>
+}) {
+  const params = await searchParams
   const supabase = await createClient()
   const {
     data: { user },
@@ -11,6 +17,9 @@ export default async function SignUpPage() {
   if (user) {
     redirect('/studies')
   }
+
+  const email = params.email?.trim() ?? ''
+  const redirectedFrom = safeAppPath(params.redirectedFrom, '')
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
@@ -23,7 +32,10 @@ export default async function SignUpPage() {
             Join AuditWiz research auditing platform
           </p>
         </div>
-        <SignUpForm />
+        <SignUpForm
+          initialEmail={email}
+          redirectedFrom={redirectedFrom || undefined}
+        />
       </div>
     </div>
   )

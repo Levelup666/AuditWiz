@@ -112,6 +112,24 @@ export async function createInstitution(formData: FormData) {
     }
   )
 
+  const { data: existingProfile } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('id', user.id)
+    .maybeSingle()
+  const completedAt = new Date().toISOString()
+  if (existingProfile) {
+    await supabase
+      .from('profiles')
+      .update({ account_setup_completed_at: completedAt })
+      .eq('id', user.id)
+  } else {
+    await supabase.from('profiles').insert({
+      id: user.id,
+      account_setup_completed_at: completedAt,
+    })
+  }
+
   revalidatePath('/onboarding')
   revalidatePath('/institutions')
   revalidatePath('/studies')

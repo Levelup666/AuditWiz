@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { createClient } from '@/lib/supabase/client'
 import { generateHash } from '@/lib/crypto'
 import { toast } from '@/lib/toast'
+import { STUDY_NOT_ACTIVE_ERROR } from '@/lib/supabase/study-status'
 
 interface AmendRecordButtonProps {
   studyId: string
@@ -57,6 +58,15 @@ export default function AmendRecordButton({ studyId, recordId, currentContent }:
 
     try {
       const supabase = createClient()
+
+      const { data: studyRow } = await supabase
+        .from('studies')
+        .select('status')
+        .eq('id', studyId)
+        .single()
+      if (studyRow?.status !== 'active') {
+        throw new Error(STUDY_NOT_ACTIVE_ERROR)
+      }
 
       const { data: currentRecord, error: fetchError } = await supabase
         .from('records')

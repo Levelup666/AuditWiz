@@ -5,7 +5,7 @@ import SignInForm from '@/components/auth/signin-form'
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ redirectedFrom?: string }>
+  searchParams: Promise<{ redirectedFrom?: string; inviteNotice?: string }>
 }) {
   const params = await searchParams
   const supabase = await createClient()
@@ -27,6 +27,11 @@ export default async function SignInPage({
           <p className="mt-2 text-center text-sm text-gray-600">
             Clinical-ready research auditing platform
           </p>
+          {params.inviteNotice && (
+            <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+              {params.inviteNotice}
+            </p>
+          )}
         </div>
         <SignInForm redirectedFrom={params.redirectedFrom} />
       </div>

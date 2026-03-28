@@ -47,7 +47,10 @@ export default async function InstitutionMembersPage({ params }: MembersPageProp
       </div>
 
       {canManage ? (
-        <InstitutionMembersManager institutionId={id} />
+        <InstitutionMembersManager
+          institutionId={id}
+          currentUserId={user.id}
+        />
       ) : (
         <p className="text-gray-500">You do not have permission to manage members.</p>
       )}

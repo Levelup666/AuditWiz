@@ -9,9 +9,15 @@ import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 import { toast } from '@/lib/toast'
 
-export default function SignUpForm() {
+export default function SignUpForm({
+  initialEmail = '',
+  redirectedFrom,
+}: {
+  initialEmail?: string
+  redirectedFrom?: string
+}) {
   const router = useRouter()
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(initialEmail)
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -33,11 +39,14 @@ export default function SignUpForm() {
 
     try {
       const supabase = createClient()
+      const callbackNext = redirectedFrom
+        ? `/auth/callback?next=${encodeURIComponent(redirectedFrom)}`
+        : '/auth/callback'
       const { error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: `${window.location.origin}${callbackNext.startsWith('/') ? callbackNext : `/${callbackNext}`}`,
         },
       })
 
@@ -48,7 +57,7 @@ export default function SignUpForm() {
       }
 
       toast.success('Account created', 'Check your email to confirm your account')
-      router.push('/studies')
+      router.push(redirectedFrom || '/studies')
       router.refresh()
     } catch (err) {
       toast.error('Sign up failed', 'An unexpected error occurred')

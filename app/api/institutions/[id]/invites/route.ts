@@ -4,7 +4,11 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { canManageInstitution } from '@/lib/supabase/permissions'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
-import { sendPendingInviteEmail } from '@/lib/email/pending-invite-notification'
+import {
+  inviteEmailDispatchFields,
+  sendPendingInviteEmail,
+} from '@/lib/email/pending-invite-notification'
+import { generateInviteToken } from '@/lib/invites/token'
 
 const VALID_ROLES = ['admin', 'member'] as const
 const DEFAULT_EXPIRY_DAYS = 7
@@ -85,6 +89,8 @@ export async function POST(
   const expiresAt = new Date()
   expiresAt.setDate(expiresAt.getDate() + DEFAULT_EXPIRY_DAYS)
 
+  const { rawToken, tokenHash } = generateInviteToken()
+
   const { data: invite, error: inviteError } = await supabase
     .from('institution_invites')
     .insert({
@@ -93,6 +99,7 @@ export async function POST(
       role,
       invited_by: user.id,
       expires_at: expiresAt.toISOString(),
+      token_hash: tokenHash,
     })
     .select('id')
     .single()
@@ -140,15 +147,39 @@ export async function POST(
     }
   )
 
-  await sendPendingInviteEmail({
+  const createdHash = await generateHash({
+    invite_id: invite.id,
+    institution_id: institutionId,
+    action: 'invite_created',
+  })
+  await createAuditEvent(
+    null,
+    user.id,
+    'invite_created',
+    'institution_invite',
+    invite.id,
+    null,
+    createdHash,
+    {
+      institution_id: institutionId,
+      email: emailTrim,
+      role,
+      kind: 'institution',
+    }
+  )
+
+  const emailResult = await sendPendingInviteEmail({
     to: emailTrim,
     kind: 'institution',
     contextLabel: institution.name,
+    inviteRawToken: rawToken,
+    supabaseAdmin: admin,
   })
 
   return NextResponse.json({
     success: true,
     id: invite.id,
     expires_at: expiresAt.toISOString(),
+    ...inviteEmailDispatchFields(emailResult),
   })
 }

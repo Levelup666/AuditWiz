@@ -15,32 +15,79 @@ export default async function InvitesPage() {
     redirect('/auth/signin')
   }
 
-  const { data: studyInvites } = await supabase
+  const userEmailNorm = user.email?.trim().toLowerCase() ?? ''
+  const { data: orcidRows } = await supabase
+    .from('user_identities')
+    .select('provider_id')
+    .eq('user_id', user.id)
+    .eq('provider', 'orcid')
+    .is('revoked_at', null)
+  const userOrcids = new Set((orcidRows || []).map((r) => r.provider_id))
+
+  const { data: studyInvitesRaw } = await supabase
     .from('study_member_invites')
-    .select('id, study_id, email, role, invited_at, expires_at, study:studies(id, title)')
+    .select('id, study_id, email, orcid_id, role, invited_at, expires_at, study:studies(id, title)')
     .is('accepted_at', null)
+    .is('revoked_at', null)
     .gt('expires_at', new Date().toISOString())
     .order('invited_at', { ascending: false })
 
-  const { data: institutionInvites } = await supabase
+  const studyInvites = (studyInvitesRaw || []).filter((inv) => {
+    if (userEmailNorm && inv.email && inv.email.trim().toLowerCase() === userEmailNorm) return true
+    if (inv.orcid_id && userOrcids.has(inv.orcid_id)) return true
+    return false
+  })
+
+  const { data: institutionInvitesRaw } = await supabase
     .from('institution_invites')
     .select('id, institution_id, email, role, invited_at, expires_at, institution:institutions(id, name)')
     .is('accepted_at', null)
+    .is('revoked_at', null)
     .gt('expires_at', new Date().toISOString())
     .order('invited_at', { ascending: false })
+
+  const institutionInvites = (institutionInvitesRaw || []).filter((inv) => {
+    if (!userEmailNorm || !inv.email) return false
+    return inv.email.trim().toLowerCase() === userEmailNorm
+  })
 
   const hasAnyInvites =
     (studyInvites && studyInvites.length > 0) || (institutionInvites && institutionInvites.length > 0)
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('account_setup_completed_at')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  const showSetupHint = !profile?.account_setup_completed_at
+
   return (
     <div className="space-y-6">
+      {showSetupHint && (
+        <Card className="border-amber-200 bg-amber-50/80 dark:border-amber-900 dark:bg-amber-950/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg text-amber-950 dark:text-amber-100">
+              Finish account setup
+            </CardTitle>
+            <CardDescription className="text-amber-900/80 dark:text-amber-200/90">
+              Set your password and notification preferences so your account is ready.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild>
+              <Link href="/account/setup?next=/invites">Continue to account setup</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Pending Invites</h1>
         <p className="mt-2 text-gray-600">
           When you are signed in, <strong>accept study and institution invites here</strong>—you do
           not need the original email link. Email links are most useful for people who still need to
-          create an account; you may still receive email reminders about pending invites when outbound
-          mail is configured (e.g. Resend).
+          create an account. New invitees may get an email from your Supabase Auth mailer (same as
+          sign-up confirmation); existing users may get a message via Resend if you configure it.
         </p>
       </div>
 

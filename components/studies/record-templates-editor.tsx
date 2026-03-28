@@ -43,11 +43,13 @@ function getListDefaultItems(f: RecordTemplateCustomFieldDef): string[] {
 interface RecordTemplatesEditorProps {
   studyId: string
   initialTemplates: RecordTemplate[]
+  studyIsActive: boolean
 }
 
 export default function RecordTemplatesEditor({
   studyId,
   initialTemplates,
+  studyIsActive,
 }: RecordTemplatesEditorProps) {
   const [templates, setTemplates] = useState<RecordTemplate[]>(initialTemplates)
   const [editing, setEditing] = useState<RecordTemplate | null>(null)
@@ -132,8 +134,19 @@ export default function RecordTemplatesEditor({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {!studyIsActive && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Templates are read-only because this study is not active.
+            </p>
+          )}
           <div className="flex justify-between items-center">
-            <Button type="button" variant="outline" size="sm" onClick={openAdd}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={openAdd}
+              disabled={!studyIsActive}
+            >
               <Plus className="mr-2 h-4 w-4" />
               Add template
             </Button>
@@ -160,6 +173,7 @@ export default function RecordTemplatesEditor({
                       size="sm"
                       onClick={() => openEdit(t)}
                       aria-label="Edit template"
+                      disabled={!studyIsActive}
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -169,6 +183,7 @@ export default function RecordTemplatesEditor({
                       size="sm"
                       onClick={() => handleDelete(t.id)}
                       aria-label="Delete template"
+                      disabled={!studyIsActive}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
@@ -260,7 +275,10 @@ export default function RecordTemplatesEditor({
             <Button variant="outline" onClick={closeEdit}>
               Cancel
             </Button>
-            <Button onClick={handleSaveEdit} disabled={pending}>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={pending || !studyIsActive}
+            >
               {pending ? 'Saving...' : 'Save'}
             </Button>
           </DialogFooter>

@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import NewRecordForm from '@/components/records/new-record-form'
 import { canManageStudyMembers } from '@/lib/supabase/permissions'
 import type { RecordTemplate } from '@/lib/types'
@@ -21,12 +21,16 @@ export default async function NewRecordPage({ params }: NewRecordPageProps) {
 
   const { data: study, error } = await supabase
     .from('studies')
-    .select('id, title, metadata, institution_id')
+    .select('id, title, metadata, institution_id, status')
     .eq('id', studyId)
     .single()
 
   if (error || !study) {
     notFound()
+  }
+
+  if (study.status !== 'active') {
+    redirect(`/studies/${studyId}`)
   }
 
   let primaryResearchField: string | null = null

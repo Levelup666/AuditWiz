@@ -1,8 +1,9 @@
 // Audit event creation utilities
 // All audit events are append-only and immutable
 
-import { createClient } from './server';
-import { AuditActionType, SystemActionMetadata } from '@/lib/types';
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { createClient } from './server'
+import { AuditActionType, SystemActionMetadata } from '@/lib/types'
 
 /**
  * Create an audit event
@@ -35,7 +36,37 @@ export async function createAuditEvent(
     throw new Error(`Failed to create audit event: ${error.message}`);
   }
 
-  return data;
+  return data
+}
+
+/** Same as createAuditEvent but uses a provided client (e.g. service role) when no user session exists. */
+export async function createAuditEventWithClient(
+  supabase: SupabaseClient,
+  studyId: string | null,
+  actorId: string | null,
+  actionType: AuditActionType,
+  targetEntityType: string,
+  targetEntityId: string | null,
+  previousStateHash: string | null,
+  newStateHash: string,
+  metadata: Record<string, any> = {}
+): Promise<string> {
+  const { data, error } = await supabase.rpc('create_audit_event', {
+    p_study_id: studyId,
+    p_actor_id: actorId,
+    p_action_type: actionType,
+    p_target_entity_type: targetEntityType,
+    p_target_entity_id: targetEntityId,
+    p_previous_state_hash: previousStateHash,
+    p_new_state_hash: newStateHash,
+    p_metadata: metadata,
+  })
+
+  if (error) {
+    throw new Error(`Failed to create audit event: ${error.message}`)
+  }
+
+  return data
 }
 
 /**

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canManageStudyMembers } from '@/lib/supabase/permissions'
+import { assertStudyIsActive } from '@/lib/supabase/study-status'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 
@@ -37,6 +38,11 @@ export async function POST(
       { error: 'You do not have permission to delete records in this study' },
       { status: 403 }
     )
+  }
+
+  const activeCheck = await assertStudyIsActive(supabase, record.study_id)
+  if (!activeCheck.ok) {
+    return NextResponse.json({ error: activeCheck.error }, { status: 403 })
   }
 
   if (record.status !== 'draft' && record.status !== 'rejected') {

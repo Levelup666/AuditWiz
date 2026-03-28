@@ -18,6 +18,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useNavContext } from './nav-provider'
 import InvitesNavLink from './invites-nav-link'
+import { isNavActive } from './is-nav-active'
 
 const navigation = [
   { name: 'Studies', href: '/studies', icon: FolderOpen },
@@ -25,7 +26,61 @@ const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: Home },
   { name: 'Audit Trail', href: '/dashboard/audit-trail', icon: Activity },
   { name: 'Profile', href: '/profile', icon: User },
-]
+] as const
+
+type NavItem = (typeof navigation)[number]
+
+function FloatingNavItem({
+  item,
+  pathname,
+  collapsed,
+  onNavigate,
+}: {
+  item: NavItem
+  pathname: string | null
+  collapsed: boolean
+  onNavigate: () => void
+}) {
+  const isActive = isNavActive(pathname, item.href, navigation)
+  if (collapsed) {
+    return (
+      <Link
+        href={item.href}
+        className={cn(
+          'mb-2 flex h-10 w-10 items-center justify-center rounded-md transition-colors',
+          isActive
+            ? 'bg-gray-800 text-white'
+            : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+        )}
+        title={item.name}
+        aria-current={isActive ? 'page' : undefined}
+      >
+        <item.icon className="h-5 w-5" />
+      </Link>
+    )
+  }
+  return (
+    <Link
+      href={item.href}
+      className={cn(
+        'group flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors',
+        isActive
+          ? 'bg-gray-800 text-white'
+          : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+      )}
+      onClick={onNavigate}
+      aria-current={isActive ? 'page' : undefined}
+    >
+      <item.icon
+        className={cn(
+          'mr-3 h-5 w-5 flex-shrink-0',
+          isActive ? 'text-white' : 'text-gray-400 group-hover:text-gray-300'
+        )}
+      />
+      <span className="truncate">{item.name}</span>
+    </Link>
+  )
+}
 
 export default function FloatingNav() {
   const pathname = usePathname()
@@ -77,30 +132,15 @@ export default function FloatingNav() {
               </span>
             </div>
             <div className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-              {navigation.map((item) => {
-                const isActive = pathname?.startsWith(item.href)
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    className={cn(
-                      'group flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                      isActive
-                        ? 'bg-gray-800 text-white'
-                        : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                    )}
-                    onClick={() => setIsOpen(false)}
-                  >
-                    <item.icon
-                      className={cn(
-                        'mr-3 h-5 w-5 flex-shrink-0',
-                        isActive ? 'text-white' : 'text-gray-400 group-hover:text-gray-300'
-                      )}
-                    />
-                    <span className="truncate">{item.name}</span>
-                  </Link>
-                )
-              })}
+              {navigation.map((item) => (
+                <FloatingNavItem
+                  key={item.name}
+                  item={item}
+                  pathname={pathname}
+                  collapsed={false}
+                  onNavigate={() => setIsOpen(false)}
+                />
+              ))}
               <InvitesNavLink isOpen onNavigate={() => setIsOpen(false)} />
             </div>
             <div className="border-t border-gray-800 p-4">
@@ -116,24 +156,15 @@ export default function FloatingNav() {
           </>
         ) : (
           <div className="flex flex-1 flex-col items-center pt-4">
-            {navigation.map((item) => {
-              const isActive = pathname?.startsWith(item.href)
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={cn(
-                    'mb-2 flex h-10 w-10 items-center justify-center rounded-md transition-colors',
-                    isActive
-                      ? 'bg-gray-800 text-white'
-                      : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-                  )}
-                  title={item.name}
-                >
-                  <item.icon className="h-5 w-5" />
-                </Link>
-              )
-            })}
+            {navigation.map((item) => (
+              <FloatingNavItem
+                key={item.name}
+                item={item}
+                pathname={pathname}
+                collapsed
+                onNavigate={() => setIsOpen(false)}
+              />
+            ))}
             <InvitesNavLink
               isOpen={false}
               collapsed

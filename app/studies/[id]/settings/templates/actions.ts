@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 import { canManageStudyMembers } from '@/lib/supabase/permissions'
+import { assertStudyIsActive } from '@/lib/supabase/study-status'
 import type { RecordTemplate } from '@/lib/types'
 
 export async function updateRecordTemplates(
@@ -24,6 +25,11 @@ export async function updateRecordTemplates(
   const allowed = await canManageStudyMembers(user.id, studyId)
   if (!allowed) {
     return { error: 'You do not have permission to update study settings' }
+  }
+
+  const activeCheck = await assertStudyIsActive(supabase, studyId)
+  if (!activeCheck.ok) {
+    return { error: activeCheck.error }
   }
 
   const { data: existing } = await supabase

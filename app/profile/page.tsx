@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import OrcidBadge from '@/components/profile/orcid-badge'
 import LinkOrcidForm from '@/components/profile/link-orcid-form'
@@ -43,11 +44,25 @@ export default async function ProfilePage() {
           <CardTitle>Account</CardTitle>
           <CardDescription>Email and display</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm">
-          <p><span className="text-gray-600">Email:</span> {user!.email ?? '—'}</p>
-          {profile?.display_name && (
-            <p><span className="text-gray-600">Display name:</span> {profile.display_name}</p>
-          )}
+        <CardContent className="space-y-4 text-sm">
+          <div className="space-y-2">
+            <p>
+              <span className="text-gray-600">Email:</span> {user!.email ?? '—'}
+            </p>
+            {profile?.display_name && (
+              <p>
+                <span className="text-gray-600">Display name:</span> {profile.display_name}
+              </p>
+            )}
+          </div>
+          <p>
+            <Link
+              href="/account/setup?next=/profile"
+              className="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Password &amp; notification settings
+            </Link>
+          </p>
         </CardContent>
       </Card>
 
