@@ -1,0 +1,2 @@
+{"sessionId":"81f720","runId":"post-fix","hypothesisId":"H1","location":"accept-institution.ts:afterMemberInsert","message":"institution_members insert succeeded","data":{},"timestamp":1775617651634}
+{"sessionId":"81f720","runId":"post-fix","hypothesisId":"H1","location":"accept-institution.ts:afterInviteUpdate","message":"invite marked accepted","data":{"updatedCount":1},"timestamp":1775617651737}
