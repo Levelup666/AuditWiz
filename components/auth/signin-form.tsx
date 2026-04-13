@@ -1,16 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 import { toast } from '@/lib/toast'
+import { safeAppPath } from '@/lib/invites/safe-redirect'
 
 export default function SignInForm({ redirectedFrom }: { redirectedFrom?: string }) {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -33,8 +32,9 @@ export default function SignInForm({ redirectedFrom }: { redirectedFrom?: string
       }
 
       toast.success('Signed in successfully')
-      router.push(redirectedFrom || '/studies')
-      router.refresh()
+      setLoading(false)
+      const dest = safeAppPath(redirectedFrom, '/dashboard')
+      window.location.assign(dest)
     } catch (err) {
       toast.error('Sign in failed', 'An unexpected error occurred')
       setLoading(false)

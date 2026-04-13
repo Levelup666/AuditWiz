@@ -20,28 +20,37 @@ import { useNavContext } from './nav-provider'
 import InvitesNavLink from './invites-nav-link'
 import { isNavActive } from './is-nav-active'
 
-const navigation = [
+const baseNavigation = [
   { name: 'Studies', href: '/studies', icon: FolderOpen },
   { name: 'Institutions', href: '/institutions', icon: Building2 },
   { name: 'Dashboard', href: '/dashboard', icon: Home },
-  { name: 'Audit Trail', href: '/dashboard/audit-trail', icon: Activity },
   { name: 'Profile', href: '/profile', icon: User },
 ] as const
 
-type NavItem = (typeof navigation)[number]
+const logsNavItem = {
+  name: 'Logs',
+  href: '/logs',
+  icon: Activity,
+} as const
+
+type NavItem =
+  | (typeof baseNavigation)[number]
+  | typeof logsNavItem
 
 function FloatingNavItem({
   item,
   pathname,
   collapsed,
   onNavigate,
+  navItems,
 }: {
   item: NavItem
   pathname: string | null
   collapsed: boolean
   onNavigate: () => void
+  navItems: readonly { href: string }[]
 }) {
-  const isActive = isNavActive(pathname, item.href, navigation)
+  const isActive = isNavActive(pathname, item.href, navItems)
   if (collapsed) {
     return (
       <Link
@@ -86,15 +95,26 @@ export default function FloatingNav() {
   const pathname = usePathname()
   const router = useRouter()
   const ctx = useNavContext()
-  const { isOpen, setIsOpen, isAuthenticated } = ctx ?? {
+  const { isOpen, setIsOpen, isAuthenticated, canViewLogs } = ctx ?? {
     isOpen: false,
     setIsOpen: () => {},
     isAuthenticated: false,
+    canViewLogs: false,
   }
 
   if (!isAuthenticated) {
     return null
   }
+
+  if (pathname?.startsWith('/auth')) {
+    return null
+  }
+
+  const navigation: NavItem[] = [
+    ...baseNavigation.slice(0, 3),
+    ...(canViewLogs ? [logsNavItem] : []),
+    baseNavigation[3],
+  ]
 
   const handleSignOut = async () => {
     const supabase = createClient()
@@ -139,6 +159,7 @@ export default function FloatingNav() {
                   pathname={pathname}
                   collapsed={false}
                   onNavigate={() => setIsOpen(false)}
+                  navItems={navigation}
                 />
               ))}
               <InvitesNavLink isOpen onNavigate={() => setIsOpen(false)} />
@@ -163,6 +184,7 @@ export default function FloatingNav() {
                 pathname={pathname}
                 collapsed
                 onNavigate={() => setIsOpen(false)}
+                navItems={navigation}
               />
             ))}
             <InvitesNavLink

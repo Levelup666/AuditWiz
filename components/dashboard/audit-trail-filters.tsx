@@ -28,7 +28,7 @@ export default function AuditTrailFilters({ studies }: AuditTrailFiltersProps) {
     } else {
       params.delete('studyId')
     }
-    router.push(`/dashboard/audit-trail?${params.toString()}`)
+    router.push(`/logs?${params.toString()}`)
   }
 
   const exportHref = `/api/audit/export?format=csv${studyId ? `&studyId=${studyId}` : ''}`

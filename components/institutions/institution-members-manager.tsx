@@ -24,6 +24,7 @@ interface Member {
   granted_at: string
   granted_by: string | null
   email: string
+  member_display_name?: string
 }
 
 interface InstitutionMembersManagerProps {
@@ -102,15 +103,22 @@ export default function InstitutionMembersManager({
                 'The recipient should receive an email shortly.'
         )
       } else {
-        const hint =
+        const codeHint =
           data.email_supabase_error?.code &&
           typeof data.email_supabase_error.code === 'string'
-            ? ` (Auth error code: ${data.email_supabase_error.code})`
+            ? ` Auth code: ${data.email_supabase_error.code}.`
+            : ''
+        const msgHint =
+          data.email_supabase_error?.message &&
+          typeof data.email_supabase_error.message === 'string'
+            ? ` Details: ${data.email_supabase_error.message.slice(0, 280)}${data.email_supabase_error.message.length > 280 ? '…' : ''}`
             : ''
         toast.warning(
           'Invite created',
           (data.email_dispatch_message ??
-            'Email was not sent. For existing accounts without Resend, ask them to sign in and open Invites.') + hint
+            'Email was not sent. For existing accounts without Resend, ask them to sign in and open Invites.') +
+            codeHint +
+            msgHint
         )
       }
       fetchMembers()
@@ -186,6 +194,7 @@ export default function InstitutionMembersManager({
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead>Name</TableHead>
             <TableHead>Email</TableHead>
             <TableHead>Role</TableHead>
             <TableHead>Added</TableHead>
@@ -197,7 +206,10 @@ export default function InstitutionMembersManager({
             const remove = institutionRemoveDisabled(m, members, currentUserId)
             return (
               <TableRow key={m.id}>
-                <TableCell className="font-medium">{m.email}</TableCell>
+                <TableCell className="font-medium">
+                  {m.member_display_name ?? m.email}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">{m.email}</TableCell>
                 <TableCell>
                   <Badge variant="outline">{m.role}</Badge>
                 </TableCell>

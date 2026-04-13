@@ -18,7 +18,7 @@ import { isNavActive } from '@/components/navigation/is-nav-active'
 const navigation = [
   { name: 'Studies', href: '/studies', icon: FolderOpen },
   { name: 'Dashboard', href: '/dashboard', icon: Home },
-  { name: 'Audit Trail', href: '/dashboard/audit-trail', icon: Activity },
+  { name: 'Logs', href: '/logs', icon: Activity },
   { name: 'Profile', href: '/profile', icon: User },
 ]
 

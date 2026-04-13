@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getAuditEventsForExport } from '@/lib/supabase/audit'
-import { getStudyMemberPermissions } from '@/lib/supabase/permissions'
+import {
+  canAuditRecord,
+  getStudyIdsWhereUserCanAudit,
+} from '@/lib/supabase/permissions'
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
@@ -13,6 +16,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const auditStudyIds = await getStudyIdsWhereUserCanAudit(user.id)
+  if (auditStudyIds.length === 0) {
+    return NextResponse.json(
+      { error: 'You do not have access to export audit events' },
+      { status: 403 }
+    )
+  }
+
   const { searchParams } = new URL(request.url)
   const studyId = searchParams.get('studyId') || undefined
   const from = searchParams.get('from') || undefined
@@ -20,10 +31,15 @@ export async function GET(request: NextRequest) {
   const format = searchParams.get('format') || 'json'
   const limit = Math.min(Number(searchParams.get('limit')) || 5000, 10000)
 
-  // When studyId is provided, verify user is a member with view access
   if (studyId) {
-    const perms = await getStudyMemberPermissions(user.id, studyId)
-    if (!perms?.can_view) {
+    if (!auditStudyIds.includes(studyId)) {
+      return NextResponse.json(
+        { error: 'You do not have access to export audit events for this study' },
+        { status: 403 }
+      )
+    }
+    const ok = await canAuditRecord(user.id, studyId)
+    if (!ok) {
       return NextResponse.json(
         { error: 'You do not have access to export audit events for this study' },
         { status: 403 }
@@ -31,7 +47,13 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const events = await getAuditEventsForExport(studyId, from, to, limit)
+  const events = await getAuditEventsForExport(
+    studyId,
+    from,
+    to,
+    limit,
+    studyId ? null : auditStudyIds
+  )
 
   if (format === 'csv') {
     const headers = [

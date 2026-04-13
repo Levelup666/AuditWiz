@@ -9,12 +9,15 @@ import { generateHash } from '@/lib/crypto'
 import { assertStudyIsActive } from '@/lib/supabase/study-status'
 import { getStudyCompletionEligibility } from '@/lib/study-completion-eligibility'
 import type { StudyStatus } from '@/lib/types'
+import { getStudyAbsoluteMemberCap } from '@/lib/study-member-cap'
 
 export interface StudySettingsInput {
   required_approval_count: number
   require_review_before_approval: boolean
   allow_creator_approval: boolean
   ai_enabled?: boolean
+  /** Omit or null to use the platform default member cap */
+  max_members?: number | null
 }
 
 export async function updateStudySettings(
@@ -56,15 +59,47 @@ export async function updateStudySettings(
       ? { ...existingMetadata, ai_enabled: settings.ai_enabled }
       : existingMetadata
 
-  const { error } = await supabase
-    .from('studies')
-    .update({
-      required_approval_count: count,
-      require_review_before_approval: Boolean(settings.require_review_before_approval),
-      allow_creator_approval: Boolean(settings.allow_creator_approval),
-      metadata,
-    })
-    .eq('id', studyId)
+  const updatePayload: Record<string, unknown> = {
+    required_approval_count: count,
+    require_review_before_approval: Boolean(settings.require_review_before_approval),
+    allow_creator_approval: Boolean(settings.allow_creator_approval),
+    metadata,
+  }
+
+  if (settings.max_members !== undefined) {
+    const abs = getStudyAbsoluteMemberCap()
+    let nextMax: number | null
+    if (settings.max_members === null) {
+      nextMax = null
+    } else {
+      const n = Math.floor(Number(settings.max_members))
+      if (!Number.isFinite(n) || n < 1) {
+        return { error: 'Member cap must be at least 1, or leave empty for platform default' }
+      }
+      if (n > abs) {
+        return { error: `Member cap cannot exceed ${abs}` }
+      }
+      nextMax = n
+    }
+
+    if (nextMax !== null) {
+      const { data: sm } = await supabase
+        .from('study_members')
+        .select('user_id')
+        .eq('study_id', studyId)
+        .is('revoked_at', null)
+      const distinct = new Set((sm ?? []).map((r) => r.user_id)).size
+      if (nextMax < distinct) {
+        return {
+          error: `Member cap cannot be below the current distinct member count (${distinct}).`,
+        }
+      }
+    }
+
+    updatePayload.max_members = nextMax
+  }
+
+  const { error } = await supabase.from('studies').update(updatePayload).eq('id', studyId)
 
   if (error) {
     return { error: error.message }

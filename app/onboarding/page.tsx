@@ -23,6 +23,12 @@ export default async function OnboardingPage() {
     redirect('/studies')
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('first_name, last_name')
+    .eq('id', user.id)
+    .maybeSingle()
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
       <div className="w-full max-w-xl space-y-8">
@@ -35,7 +41,10 @@ export default async function OnboardingPage() {
             You will be the administrator and can invite others, create studies, and delegate roles.
           </p>
         </div>
-        <InstitutionForm />
+        <InstitutionForm
+          initialFirstName={profile?.first_name ?? ''}
+          initialLastName={profile?.last_name ?? ''}
+        />
       </div>
     </div>
   )

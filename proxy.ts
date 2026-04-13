@@ -35,7 +35,8 @@ export async function proxy(request: NextRequest) {
 
     // Protect dashboard/study routes - require authentication
     if (request.nextUrl.pathname.startsWith('/studies') ||
-        request.nextUrl.pathname.startsWith('/dashboard')) {
+        request.nextUrl.pathname.startsWith('/dashboard') ||
+        request.nextUrl.pathname.startsWith('/logs')) {
       if (!user) {
         const url = request.nextUrl.clone()
         url.pathname = '/auth/signin'
@@ -44,11 +45,17 @@ export async function proxy(request: NextRequest) {
       }
     }
 
-    // Redirect authenticated users away from auth pages
+    // Redirect authenticated users away from auth pages (not signin/signup: hash fragments
+    // are invisible to the server; the client must parse #access_token and route invites).
     if (request.nextUrl.pathname.startsWith('/auth')) {
-      if (user) {
+      const path = request.nextUrl.pathname
+      const skipForHashClient =
+        path === '/auth/signin' ||
+        path === '/auth/signup' ||
+        path === '/auth/callback'
+      if (user && !skipForHashClient) {
         const url = request.nextUrl.clone()
-        url.pathname = '/studies'
+        url.pathname = '/dashboard'
         return NextResponse.redirect(url)
       }
     }

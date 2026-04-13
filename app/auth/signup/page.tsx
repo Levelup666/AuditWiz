@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import SignUpForm from '@/components/auth/signup-form'
+import { AuthHashRedirect } from '@/components/auth/auth-hash-redirect'
 import { safeAppPath } from '@/lib/invites/safe-redirect'
 
 export default async function SignUpPage({
@@ -32,10 +33,12 @@ export default async function SignUpPage({
             Join AuditWiz research auditing platform
           </p>
         </div>
-        <SignUpForm
-          initialEmail={email}
-          redirectedFrom={redirectedFrom || undefined}
-        />
+        <AuthHashRedirect redirectedFrom={redirectedFrom || undefined}>
+          <SignUpForm
+            initialEmail={email}
+            redirectedFrom={redirectedFrom || undefined}
+          />
+        </AuthHashRedirect>
       </div>
     </div>
   )

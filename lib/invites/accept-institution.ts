@@ -36,26 +36,14 @@ export async function acceptInstitutionInviteForUser(
     return { ok: false, status: 410, error: 'Invite has expired' }
   }
 
-  const userEmailNorm = userEmail?.toLowerCase()
-  const inviteEmailNorm = invite.email?.toLowerCase()
+  const userEmailNorm = userEmail?.trim().toLowerCase() ?? ''
+  const inviteEmailNorm = invite.email?.trim().toLowerCase() ?? ''
   if (userEmailNorm !== inviteEmailNorm) {
     return {
       ok: false,
       status: 403,
       error: 'This invite was sent to a different email address',
     }
-  }
-
-  const { error: updateError } = await supabase
-    .from('institution_invites')
-    .update({
-      accepted_at: new Date().toISOString(),
-      accepted_by: userId,
-    })
-    .eq('id', inviteId)
-
-  if (updateError) {
-    return { ok: false, status: 500, error: updateError.message }
   }
 
   const { error: memberError } = await supabase.from('institution_members').insert({
@@ -65,8 +53,28 @@ export async function acceptInstitutionInviteForUser(
     granted_by: invite.invited_by,
   })
 
-  if (memberError) {
+  if (memberError && memberError.code !== '23505') {
     return { ok: false, status: 500, error: memberError.message }
+  }
+
+  const nowIso = new Date().toISOString()
+  const { data: updatedRows, error: updateError } = await supabase
+    .from('institution_invites')
+    .update({
+      accepted_at: nowIso,
+      accepted_by: userId,
+    })
+    .eq('id', inviteId)
+    .select('id')
+
+  if (updateError || !updatedRows?.length) {
+    return {
+      ok: false,
+      status: 500,
+      error:
+        updateError?.message ??
+        'Membership was created but the invite could not be marked accepted. Contact an institution admin.',
+    }
   }
 
   const stateHash = await generateHash({

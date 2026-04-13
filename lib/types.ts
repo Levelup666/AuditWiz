@@ -86,6 +86,9 @@ export interface Profile {
   orcid_verified: boolean;
   orcid_affiliation_snapshot: string | null;
   display_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  nickname: string | null;
   created_at: string;
   updated_at: string;
 }

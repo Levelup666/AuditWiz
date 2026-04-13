@@ -9,7 +9,7 @@ import RecordSignatures from '@/components/records/record-signatures'
 import AmendRecordButton from '@/components/records/amend-record-button'
 import SignRecordButton from '@/components/records/sign-record-button'
 import ShareRecordButton from '@/components/records/share-record-button'
-import { canCreateRecord, canApproveRecord, canReviewRecord, canShareRecord, canManageStudyMembers } from '@/lib/supabase/permissions'
+import { canCreateRecord, canApproveRecord, canReviewRecord, canShareRecord, hasStudyAdminRoleOnly } from '@/lib/supabase/permissions'
 import DeleteRecordButton from '@/components/records/delete-record-button'
 import RecordStatusActions from '@/components/records/record-status-actions'
 import RecordDocuments from '@/components/records/record-documents'
@@ -19,6 +19,7 @@ import OrcidBadge from '@/components/profile/orcid-badge'
 import RecordCreatedBanner from '@/components/records/record-created-banner'
 import RecordDraftForm from '@/components/records/record-draft-form'
 import RecordContentSummary from '@/components/records/record-content-summary'
+import { formatMemberListName } from '@/lib/profile/member-display-name'
 
 interface RecordPageProps {
   params: Promise<{ id: string; recordId: string }>
@@ -61,21 +62,45 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
   const canSign = await canApproveRecord(user.id, id)
   const canReject = await canReviewRecord(user.id, id) || canSign
   const canShare = await canShareRecord(user.id, id)
-  const canDelete = await canManageStudyMembers(user.id, id)
+  const canDelete = await hasStudyAdminRoleOnly(user.id, id)
 
   const { data: creatorProfile } = await supabase
     .from('profiles')
-    .select('orcid_id, orcid_verified, display_name')
+    .select('orcid_id, orcid_verified, first_name, last_name, nickname, display_name')
     .eq('id', record.created_by)
     .maybeSingle()
 
   const { data: lastEditorProfile } = record.last_edited_by
     ? await supabase
         .from('profiles')
-        .select('display_name')
+        .select('first_name, last_name, nickname, display_name')
         .eq('id', record.last_edited_by)
         .maybeSingle()
     : { data: null }
+
+  const creatorListName = creatorProfile
+    ? formatMemberListName(
+        {
+          nickname: creatorProfile.nickname,
+          first_name: creatorProfile.first_name,
+          last_name: creatorProfile.last_name,
+          display_name: creatorProfile.display_name,
+        },
+        { userId: record.created_by }
+      )
+    : 'Unknown'
+
+  const lastEditorListName = lastEditorProfile
+    ? formatMemberListName(
+        {
+          nickname: lastEditorProfile.nickname,
+          first_name: lastEditorProfile.first_name,
+          last_name: lastEditorProfile.last_name,
+          display_name: lastEditorProfile.display_name,
+        },
+        { userId: record.last_edited_by! }
+      )
+    : null
 
   const isDraftEditable = record.status === 'draft' && canAmend && studyIsActive
 
@@ -89,9 +114,9 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
           </h1>
           <p className="mt-2 text-sm text-gray-500 flex items-center gap-2 flex-wrap">
             <span>Created: {new Date(record.created_at).toLocaleString()}</span>
-            {creatorProfile && (creatorProfile.orcid_id || creatorProfile.display_name) && (
+            {creatorProfile && (creatorProfile.orcid_id || creatorListName !== 'Unknown') && (
               <span className="inline-flex items-center gap-1">
-                {creatorProfile.display_name || 'Contributor'}
+                {creatorListName !== 'Unknown' ? creatorListName : 'Contributor'}
                 {creatorProfile.orcid_id && (
                   <OrcidBadge
                     orcidId={creatorProfile.orcid_id}
@@ -109,7 +134,7 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
           )}
           {record.last_edited_at && record.last_edited_by && (
             <p className="mt-1 text-sm text-gray-500">
-              Last edited by {lastEditorProfile?.display_name ?? 'a team member'} at{' '}
+              Last edited by {lastEditorListName ?? 'a team member'} at{' '}
               {new Date(record.last_edited_at).toLocaleString()}
             </p>
           )}

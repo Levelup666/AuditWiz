@@ -5,24 +5,87 @@ import { canManageStudyMembers, isActiveInstitutionMember } from '@/lib/supabase
 import { getStudyCollaborationPolicy } from '@/lib/study-institution-policy'
 import {
   inviteEmailDispatchFields,
+  sendExistingUserPendingInviteNotification,
   sendPendingInviteEmail,
 } from '@/lib/email/pending-invite-notification'
+import { findUserIdByEmail } from '@/lib/supabase/find-user-by-email'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 import { validateStudyMemberRevocation } from '@/lib/supabase/member-revocation'
 import { assertStudyIsActive } from '@/lib/supabase/study-status'
 import { generateInviteToken } from '@/lib/invites/token'
+import { getPendingInviteExpiresAt } from '@/lib/invites/pending-invite-expiry'
+import { revokeExpiredPendingStudyEmailInvite } from '@/lib/invites/revoke-expired-pending-study-invite'
+import { formatMemberListName } from '@/lib/profile/member-display-name'
+import { getStudyRoleDefinitionIdBySlug } from '@/lib/supabase/study-roles'
+import { getEffectiveStudyMemberCap } from '@/lib/study-member-cap'
+import {
+  activeStudyAssignmentCount,
+  assertRoomForNewStudyParticipant,
+} from '@/lib/study-participant-room'
 
-const VALID_ROLES = ['creator', 'reviewer', 'approver', 'auditor', 'admin'] as const
+async function createPendingStudyInviteByEmail(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>
+  studyId: string
+  invitedBy: string
+  emailTrim: string
+  role: string
+  auditExtra: Record<string, unknown>
+}): Promise<{ inviteId: string; rawToken: string; expiresAt: string }> {
+  const { supabase, studyId, invitedBy, emailTrim, role, auditExtra } = params
+  await revokeExpiredPendingStudyEmailInvite(supabase, studyId, emailTrim)
+  const expiresAt = getPendingInviteExpiresAt()
+  const { rawToken, tokenHash } = generateInviteToken()
+  const { data: invite, error: inviteError } = await supabase
+    .from('study_member_invites')
+    .insert({
+      study_id: studyId,
+      email: emailTrim,
+      role,
+      invited_by: invitedBy,
+      expires_at: expiresAt.toISOString(),
+      token_hash: tokenHash,
+    })
+    .select('id')
+    .single()
 
-function permissionFlagsForRole(role: string) {
-  return {
-    can_view: true,
-    can_comment: true,
-    can_review: ['reviewer', 'approver', 'auditor', 'admin'].includes(role),
-    can_approve: ['approver', 'admin'].includes(role),
-    can_share: ['approver', 'admin'].includes(role),
+  if (inviteError) {
+    throw inviteError
   }
+
+  const stateHash = await generateHash({
+    study_id: studyId,
+    invite_id: invite.id,
+    email: emailTrim,
+    role,
+  })
+  await createAuditEvent(
+    studyId,
+    invitedBy,
+    'study_member_invited',
+    'study_member_invite',
+    invite.id,
+    null,
+    stateHash,
+    { role, email: emailTrim, pending: true, ...auditExtra }
+  )
+  const createdHash = await generateHash({
+    study_id: studyId,
+    invite_id: invite.id,
+    action: 'invite_created',
+  })
+  await createAuditEvent(
+    studyId,
+    invitedBy,
+    'invite_created',
+    'study_member_invite',
+    invite.id,
+    null,
+    createdHash,
+    { role, email: emailTrim, pending: true, kind: 'study', ...auditExtra }
+  )
+
+  return { inviteId: invite.id, rawToken, expiresAt: expiresAt.toISOString() }
 }
 
 export async function GET(
@@ -46,7 +109,9 @@ export async function GET(
 
   const { data: members, error } = await supabase
     .from('study_members')
-    .select('id, user_id, role, granted_at, granted_by, can_view, can_comment, can_review, can_approve, can_share')
+    .select(
+      'id, user_id, role, role_definition_id, granted_at, granted_by, can_view, can_comment, can_review, can_approve, can_share'
+    )
     .eq('study_id', studyId)
     .is('revoked_at', null)
     .order('granted_at', { ascending: false })
@@ -57,7 +122,6 @@ export async function GET(
 
   const admin = createAdminClient()
   const emails: Record<string, string> = {}
-  const orcidIds: Record<string, string> = {}
   for (const m of members || []) {
     try {
       const { data: u } = await admin.auth.admin.getUserById(m.user_id)
@@ -65,17 +129,59 @@ export async function GET(
     } catch {
       emails[m.user_id] = m.user_id.slice(0, 8) + '…'
     }
-    const { data: profile } = await supabase.from('profiles').select('orcid_id').eq('id', m.user_id).maybeSingle()
-    if (profile?.orcid_id) orcidIds[m.user_id] = profile.orcid_id
   }
 
-  const withEmails = (members || []).map((m) => ({
-    ...m,
-    email: emails[m.user_id] ?? m.user_id.slice(0, 8) + '…',
-    orcid_id: orcidIds[m.user_id] ?? null,
-  }))
+  const userIds = [...new Set((members ?? []).map((m) => m.user_id))]
+  const { data: profileRows } =
+    userIds.length > 0
+      ? await supabase
+          .from('profiles')
+          .select('id, orcid_id, first_name, last_name, nickname, display_name')
+          .in('id', userIds)
+      : { data: null as null }
 
-  return NextResponse.json(withEmails)
+  const profileByUser = new Map(
+    (profileRows ?? []).map((p) => [
+      p.id,
+      p,
+    ])
+  )
+
+  const withEmails = (members || []).map((m) => {
+    const email = emails[m.user_id] ?? m.user_id.slice(0, 8) + '…'
+    const prof = profileByUser.get(m.user_id)
+    const member_display_name = formatMemberListName(
+      {
+        nickname: prof?.nickname,
+        first_name: prof?.first_name,
+        last_name: prof?.last_name,
+        display_name: prof?.display_name,
+      },
+      { email, userId: m.user_id }
+    )
+    return {
+      ...m,
+      email,
+      orcid_id: prof?.orcid_id ?? null,
+      member_display_name,
+    }
+  })
+
+  const { data: studyCapRow } = await supabase
+    .from('studies')
+    .select('max_members')
+    .eq('id', studyId)
+    .single()
+  const effCap = getEffectiveStudyMemberCap(studyCapRow ?? { max_members: null })
+  const distinctUsers = new Set((withEmails ?? []).map((m) => m.user_id)).size
+
+  return NextResponse.json({
+    members: withEmails,
+    meta: {
+      member_cap: effCap,
+      distinct_member_count: distinctUsers,
+    },
+  })
 }
 
 export async function POST(
@@ -123,7 +229,8 @@ export async function POST(
     return NextResponse.json({ error: 'role is required' }, { status: 400 })
   }
 
-  if (!VALID_ROLES.includes(role as (typeof VALID_ROLES)[number])) {
+  const roleDefId = await getStudyRoleDefinitionIdBySlug(supabase, studyId, String(role).trim())
+  if (!roleDefId) {
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
   }
 
@@ -137,8 +244,6 @@ export async function POST(
   const policy = await getStudyCollaborationPolicy(studyId)
   const institutionOnlyMessage =
     'This institution requires everyone on a study to be an institution member first. Invite them to the institution (and wait for acceptance), or enable external collaborators in institution settings.'
-
-  const flags = permissionFlagsForRole(role)
 
   // Add existing institution member by user id (internal picker)
   if (userIdTrim) {
@@ -172,31 +277,47 @@ export async function POST(
       )
     }
 
-    const { data: existingMember } = await supabase
-      .from('study_members')
+    const ac = await activeStudyAssignmentCount(supabase, studyId, userIdTrim)
+    if (ac >= 2) {
+      return NextResponse.json(
+        { error: 'User already has the maximum number of roles on this study' },
+        { status: 409 }
+      )
+    }
+    const { data: dupRole } = await supabase
+      .from('study_member_role_assignments')
       .select('id')
       .eq('study_id', studyId)
       .eq('user_id', userIdTrim)
+      .eq('role_definition_id', roleDefId)
       .is('revoked_at', null)
       .maybeSingle()
-
-    if (existingMember) {
+    if (dupRole) {
       return NextResponse.json(
-        { error: 'User is already a member of this study' },
+        { error: 'User already has this role on the study' },
         { status: 409 }
       )
     }
 
-    const { error: insertByIdError } = await supabase.from('study_members').insert({
-      study_id: studyId,
-      user_id: userIdTrim,
-      role,
-      granted_by: user.id,
-      ...flags,
-    })
+    const room = await assertRoomForNewStudyParticipant(supabase, studyId, userIdTrim)
+    if (!room.ok) {
+      return NextResponse.json({ error: room.message }, { status: 403 })
+    }
+
+    const { error: insertByIdError } = await supabase
+      .from('study_member_role_assignments')
+      .insert({
+        study_id: studyId,
+        user_id: userIdTrim,
+        role_definition_id: roleDefId,
+        granted_by: user.id,
+      })
 
     if (insertByIdError) {
-      if (insertByIdError.code === '23505') {
+      if (
+        insertByIdError.code === '23505' ||
+        insertByIdError.message.includes('At most two')
+      ) {
         return NextResponse.json(
           { error: 'User is already a member of this study' },
           { status: 409 }
@@ -268,16 +389,50 @@ export async function POST(
         return NextResponse.json({ error: institutionOnlyMessage }, { status: 403 })
       }
 
-      const { error: insertError } = await supabase.from('study_members').insert({
-        study_id: studyId,
-        user_id: identity.user_id,
-        role,
-        granted_by: user.id,
-        ...flags,
-      })
+      const acO = await activeStudyAssignmentCount(supabase, studyId, identity.user_id)
+      if (acO >= 2) {
+        return NextResponse.json(
+          { error: 'User already has the maximum number of roles on this study' },
+          { status: 409 }
+        )
+      }
+      const { data: dupO } = await supabase
+        .from('study_member_role_assignments')
+        .select('id')
+        .eq('study_id', studyId)
+        .eq('user_id', identity.user_id)
+        .eq('role_definition_id', roleDefId)
+        .is('revoked_at', null)
+        .maybeSingle()
+      if (dupO) {
+        return NextResponse.json(
+          { error: 'User already has this role on the study' },
+          { status: 409 }
+        )
+      }
+      const roomO = await assertRoomForNewStudyParticipant(
+        supabase,
+        studyId,
+        identity.user_id
+      )
+      if (!roomO.ok) {
+        return NextResponse.json({ error: roomO.message }, { status: 403 })
+      }
+
+      const { error: insertError } = await supabase
+        .from('study_member_role_assignments')
+        .insert({
+          study_id: studyId,
+          user_id: identity.user_id,
+          role_definition_id: roleDefId,
+          granted_by: user.id,
+        })
 
       if (insertError) {
-        if (insertError.code === '23505') {
+        if (
+          insertError.code === '23505' ||
+          insertError.message.includes('At most two')
+        ) {
           return NextResponse.json(
             { error: 'User is already a member of this study' },
             { status: 409 }
@@ -317,9 +472,11 @@ export async function POST(
       )
     }
 
-    const expiresAt = new Date()
-    expiresAt.setDate(expiresAt.getDate() + 7)
+    const expiresAt = getPendingInviteExpiresAt()
     const { rawToken, tokenHash } = generateInviteToken()
+    if (emailTrim) {
+      await revokeExpiredPendingStudyEmailInvite(supabase, studyId, emailTrim)
+    }
     const { data: invite, error: inviteError } = await supabase
       .from('study_member_invites')
       .insert({
@@ -377,6 +534,7 @@ export async function POST(
         kind: 'study',
         contextLabel: policy.studyTitle,
         inviteRawToken: rawToken,
+        expiresAtIso: expiresAt.toISOString(),
         supabaseAdmin: orcidInviteAdmin,
       })
       emailDispatch = inviteEmailDispatchFields(emailResult)
@@ -384,6 +542,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       pending: true,
+      expires_at: expiresAt.toISOString(),
       message:
         'Invitation created. They can accept from the Invites page after signing in with this ORCID (email notification sent if an address was provided and mail is configured).',
       ...(emailDispatch ?? {}),
@@ -398,12 +557,26 @@ export async function POST(
     )
   }
   const admin = createAdminClient()
-  const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 })
-  const found = list?.users?.find(
-    (u) => u.email?.toLowerCase() === emailTrim.toLowerCase()
-  )
+  const existingUserId = await findUserIdByEmail(admin, emailTrim)
 
-  if (!found) {
+  const { data: duplicateOpenInvite } = await supabase
+    .from('study_member_invites')
+    .select('id')
+    .eq('study_id', studyId)
+    .ilike('email', emailTrim)
+    .is('accepted_at', null)
+    .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .maybeSingle()
+
+  if (duplicateOpenInvite) {
+    return NextResponse.json(
+      { error: 'A pending invite already exists for this email on this study.' },
+      { status: 400 }
+    )
+  }
+
+  if (!existingUserId) {
     if (!policy.allowExternalCollaborators && policy.institutionId) {
       return NextResponse.json(
         {
@@ -414,71 +587,51 @@ export async function POST(
       )
     }
 
-    const expiresAt = new Date()
-    expiresAt.setDate(expiresAt.getDate() + 7)
-    const { rawToken, tokenHash } = generateInviteToken()
-    const { data: invite, error: inviteError } = await supabase
-      .from('study_member_invites')
-      .insert({
-        study_id: studyId,
-        email: emailTrim,
-        role,
-        invited_by: user.id,
-        expires_at: expiresAt.toISOString(),
-        token_hash: tokenHash,
-      })
-      .select('id')
-      .single()
-
-    if (inviteError) {
-      return NextResponse.json({ error: inviteError.message }, { status: 500 })
+    const roomNew = await assertRoomForNewStudyParticipant(supabase, studyId, null)
+    if (!roomNew.ok) {
+      return NextResponse.json({ error: roomNew.message }, { status: 403 })
     }
 
-    const stateHash = await generateHash({
-      study_id: studyId,
-      invite_id: invite.id,
-      email: emailTrim,
-      role,
-    })
-    await createAuditEvent(
-      studyId,
-      user.id,
-      'study_member_invited',
-      'study_member_invite',
-      invite.id,
-      null,
-      stateHash,
-      { role, email: emailTrim, pending: true, no_account_yet: true }
-    )
-    const createdHash = await generateHash({
-      study_id: studyId,
-      invite_id: invite.id,
-      action: 'invite_created',
-    })
-    await createAuditEvent(
-      studyId,
-      user.id,
-      'invite_created',
-      'study_member_invite',
-      invite.id,
-      null,
-      createdHash,
-      { role, email: emailTrim, pending: true, kind: 'study' }
-    )
+    let rawToken: string
+    let pendingExpiresAt: string
+    try {
+      ;({ rawToken, expiresAt: pendingExpiresAt } = await createPendingStudyInviteByEmail({
+        supabase,
+        studyId,
+        invitedBy: user.id,
+        emailTrim,
+        role,
+        auditExtra: { no_account_yet: true },
+      }))
+    } catch (e: unknown) {
+      const err = e as { code?: string; message?: string }
+      if (err.code === '23505') {
+        return NextResponse.json(
+          { error: 'A pending invite already exists for this email on this study.' },
+          { status: 400 }
+        )
+      }
+      return NextResponse.json(
+        { error: err.message ?? 'Failed to create invite' },
+        { status: 500 }
+      )
+    }
 
     const emailResult = await sendPendingInviteEmail({
       to: emailTrim,
       kind: 'study',
       contextLabel: policy.studyTitle,
       inviteRawToken: rawToken,
+      expiresAtIso: pendingExpiresAt,
       supabaseAdmin: admin,
     })
 
     return NextResponse.json({
       success: true,
       pending: true,
+      expires_at: pendingExpiresAt,
       message:
-        'No account yet—pending invite created. They should sign up with this email, then accept under Invites in the app. An email was sent if outbound mail is configured.',
+        'Pending invite created. They should sign up with this email and accept under Invites when signed in. An email was sent if outbound mail is configured.',
       ...inviteEmailDispatchFields(emailResult),
     })
   }
@@ -486,56 +639,69 @@ export async function POST(
   if (
     policy.institutionId &&
     !policy.allowExternalCollaborators &&
-    !(await isActiveInstitutionMember(found.id, policy.institutionId))
+    !(await isActiveInstitutionMember(existingUserId, policy.institutionId))
   ) {
     return NextResponse.json({ error: institutionOnlyMessage }, { status: 403 })
   }
 
-  const { error: insertError } = await supabase.from('study_members').insert({
-    study_id: studyId,
-    user_id: found.id,
-    role,
-    granted_by: user.id,
-    ...flags,
-  })
-
-  if (insertError) {
-    if (insertError.code === '23505') {
-      return NextResponse.json(
-        { error: 'User is already a member of this study' },
-        { status: 409 }
-      )
-    }
-    return NextResponse.json({ error: insertError.message }, { status: 500 })
+  const acE = await activeStudyAssignmentCount(supabase, studyId, existingUserId)
+  if (acE >= 2) {
+    return NextResponse.json(
+      {
+        error:
+          'User already has the maximum number of roles on this study. Revoke a role before sending another invite.',
+      },
+      { status: 409 }
+    )
   }
 
-  const stateHash = await generateHash({
-    study_id: studyId,
-    user_id: found.id,
-    role,
-    granted_by: user.id,
-  })
-  await createAuditEvent(
-    studyId,
-    user.id,
-    'study_member_invited',
-    'study_member',
-    found.id,
-    null,
-    stateHash,
-    { role, email: emailTrim }
-  )
+  if (acE === 0) {
+    const roomEx = await assertRoomForNewStudyParticipant(supabase, studyId, existingUserId)
+    if (!roomEx.ok) {
+      return NextResponse.json({ error: roomEx.message }, { status: 403 })
+    }
+  }
 
-  const emailResultExisting = await sendPendingInviteEmail({
+  let rawTokenExisting: string
+  let pendingExpiresExisting: string
+  try {
+    ;({ rawToken: rawTokenExisting, expiresAt: pendingExpiresExisting } =
+      await createPendingStudyInviteByEmail({
+        supabase,
+        studyId,
+        invitedBy: user.id,
+        emailTrim,
+        role,
+        auditExtra: { existing_auth_user: true },
+      }))
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string }
+    if (err.code === '23505') {
+      return NextResponse.json(
+        { error: 'A pending invite already exists for this email on this study.' },
+        { status: 400 }
+      )
+    }
+    return NextResponse.json(
+      { error: err.message ?? 'Failed to create invite' },
+      { status: 500 }
+    )
+  }
+
+  const emailResultExisting = await sendExistingUserPendingInviteNotification({
     to: emailTrim,
     kind: 'study',
     contextLabel: policy.studyTitle,
-    supabaseAdmin: admin,
+    inviteRawToken: rawTokenExisting,
+    expiresAtIso: pendingExpiresExisting,
   })
 
   return NextResponse.json({
     success: true,
-    message: 'Member added. They can also see this study from Invites if they prefer the in-app flow.',
+    pending: true,
+    expires_at: pendingExpiresExisting,
+    message:
+      'Pending invite created. They already have an account—ask them to sign in and accept under Invites. They were emailed if Resend is configured.',
     ...inviteEmailDispatchFields(emailResultExisting),
   })
 }
@@ -576,7 +742,7 @@ export async function PATCH(
 
   const { data: member, error: fetchError } = await supabase
     .from('study_members')
-    .select('id, user_id, role')
+    .select('id, user_id, role, role_definition_id')
     .eq('id', memberId)
     .eq('study_id', studyId)
     .is('revoked_at', null)
@@ -586,46 +752,61 @@ export async function PATCH(
     return NextResponse.json({ error: 'Member not found' }, { status: 404 })
   }
 
-  const { count: memberCount, error: countErr } = await supabase
+  const { data: activeRows, error: countErr } = await supabase
     .from('study_members')
-    .select('*', { count: 'exact', head: true })
+    .select('id, user_id, role')
     .eq('study_id', studyId)
     .is('revoked_at', null)
 
-  const { count: privilegedCount, error: privErr } = await supabase
-    .from('study_members')
-    .select('*', { count: 'exact', head: true })
-    .eq('study_id', studyId)
-    .is('revoked_at', null)
-    .in('role', ['admin', 'creator'])
+  if (countErr) {
+    return NextResponse.json({ error: countErr.message ?? 'Count failed' }, { status: 500 })
+  }
 
-  if (countErr || privErr) {
-    return NextResponse.json(
-      { error: countErr?.message ?? privErr?.message ?? 'Count failed' },
-      { status: 500 }
-    )
+  const remainingUsers = new Set<string>()
+  const remainingPrivilegedUsers = new Set<string>()
+  for (const r of activeRows ?? []) {
+    if (r.id === member.id) continue
+    remainingUsers.add(r.user_id)
+    if (r.role === 'admin' || r.role === 'creator') {
+      remainingPrivilegedUsers.add(r.user_id)
+    }
   }
 
   const decision = validateStudyMemberRevocation({
     actorId: user.id,
     targetUserId: member.user_id,
     targetRole: member.role,
-    activeMemberCount: memberCount ?? 0,
-    activePrivilegedMemberCount: privilegedCount ?? 0,
+    remainingDistinctMemberCount: remainingUsers.size,
+    remainingPrivilegedDistinctUserCount: remainingPrivilegedUsers.size,
   })
 
   if (!decision.ok) {
     return NextResponse.json({ error: decision.message }, { status: 403 })
   }
 
-  const { error } = await supabase
-    .from('study_members')
-    .update({ revoked_at: new Date().toISOString() })
-    .eq('id', memberId)
-    .eq('study_id', studyId)
+  const now = new Date().toISOString()
+  if (member.role_definition_id) {
+    const { error: raErr } = await supabase
+      .from('study_member_role_assignments')
+      .update({ revoked_at: now })
+      .eq('study_id', studyId)
+      .eq('user_id', member.user_id)
+      .eq('role_definition_id', member.role_definition_id)
+      .is('revoked_at', null)
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    if (raErr) {
+      return NextResponse.json({ error: raErr.message }, { status: 500 })
+    }
+  } else {
+    const { error } = await supabase
+      .from('study_members')
+      .update({ revoked_at: now })
+      .eq('id', memberId)
+      .eq('study_id', studyId)
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
   }
 
   const stateHash = await generateHash({

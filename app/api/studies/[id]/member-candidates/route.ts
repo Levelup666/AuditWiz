@@ -3,11 +3,13 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canManageStudyMembers } from '@/lib/supabase/permissions'
 import { getStudyCollaborationPolicy } from '@/lib/study-institution-policy'
+import { formatMemberListName } from '@/lib/profile/member-display-name'
 
 export type StudyMemberCandidate = {
   user_id: string
   email: string
   display_name: string | null
+  member_display_name: string
   orcid_id: string | null
 }
 
@@ -67,7 +69,13 @@ export async function GET(
     return NextResponse.json({ error: smErr.message }, { status: 500 })
   }
 
-  const inStudy = new Set((studyRows ?? []).map((r) => r.user_id))
+  const assignmentCountByUser = new Map<string, number>()
+  for (const r of studyRows ?? []) {
+    assignmentCountByUser.set(
+      r.user_id,
+      (assignmentCountByUser.get(r.user_id) ?? 0) + 1
+    )
+  }
 
   const { data: instRows, error: imErr } = await admin
     .from('institution_members')
@@ -82,11 +90,12 @@ export async function GET(
   const candidates: StudyMemberCandidate[] = []
 
   for (const row of instRows ?? []) {
-    if (inStudy.has(row.user_id)) continue
+    const ac = assignmentCountByUser.get(row.user_id) ?? 0
+    if (ac >= 2) continue
 
     const { data: profile } = await admin
       .from('profiles')
-      .select('display_name, orcid_id')
+      .select('display_name, orcid_id, first_name, last_name, nickname')
       .eq('id', row.user_id)
       .maybeSingle()
 
@@ -98,17 +107,28 @@ export async function GET(
       email = ''
     }
 
+    const member_display_name = formatMemberListName(
+      {
+        nickname: profile?.nickname,
+        first_name: profile?.first_name,
+        last_name: profile?.last_name,
+        display_name: profile?.display_name,
+      },
+      { email, userId: row.user_id }
+    )
+
     candidates.push({
       user_id: row.user_id,
       email,
       display_name: profile?.display_name ?? null,
+      member_display_name,
       orcid_id: profile?.orcid_id ?? null,
     })
   }
 
   candidates.sort((a, b) => {
-    const ae = (a.email || a.display_name || a.user_id).toLowerCase()
-    const be = (b.email || b.display_name || b.user_id).toLowerCase()
+    const ae = (a.member_display_name || a.email || a.user_id).toLowerCase()
+    const be = (b.member_display_name || b.email || b.user_id).toLowerCase()
     return ae.localeCompare(be)
   })
 

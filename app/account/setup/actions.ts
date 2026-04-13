@@ -9,6 +9,7 @@ import { lookupInviteByTokenHash } from '@/lib/invites/lookup-invite-by-token'
 import { acceptStudyInviteForUser } from '@/lib/invites/accept-study'
 import { acceptInstitutionInviteForUser } from '@/lib/invites/accept-institution'
 import { safeAppPath } from '@/lib/invites/safe-redirect'
+import { profileDisplayNameForDb } from '@/lib/profile/member-display-name'
 
 function safeNextPath(next: string | null | undefined): string {
   return safeAppPath(next, '/invites')
@@ -24,27 +25,76 @@ export async function saveAccountSetup(formData: FormData) {
     return { error: 'Not signed in' }
   }
 
-  const displayName = (formData.get('display_name') as string)?.trim() || null
+  const first_name_raw = (formData.get('first_name') as string)?.trim() ?? ''
+  const last_name_raw = (formData.get('last_name') as string)?.trim() ?? ''
+  const nickname_raw = (formData.get('nickname') as string)?.trim() ?? ''
+  const nickname = nickname_raw ? nickname_raw : null
+
   const emailInvites = formData.get('notification_email_invites') === 'on'
   const emailStudy = formData.get('notification_email_study_activity') === 'on'
   const nextRaw = (formData.get('next') as string) || '/invites'
   const next = safeNextPath(nextRaw)
   const inviteToken = (formData.get('invite_token') as string)?.trim() || ''
+  const password = (formData.get('password') as string)?.trim() || ''
+  const confirmPassword = (formData.get('confirm_password') as string)?.trim() || ''
+
+  const { data: prof } = await supabase
+    .from('profiles')
+    .select('id, account_setup_completed_at, first_name, last_name')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  const inviteDriven = Boolean(inviteToken)
+  const firstCompletion = !prof?.account_setup_completed_at
+
+  if (inviteDriven && !password) {
+    return { error: 'Set a password before accepting your invitation.' }
+  }
+
+  if (inviteDriven || firstCompletion) {
+    if (!first_name_raw || !last_name_raw) {
+      return { error: 'First name and last name are required.' }
+    }
+  }
+
+  if (password || confirmPassword) {
+    if (password.length < 8) {
+      return { error: 'Use at least 8 characters for your password.' }
+    }
+    if (password !== confirmPassword) {
+      return { error: 'Passwords do not match.' }
+    }
+
+    const { error: passwordError } = await supabase.auth.updateUser({ password })
+    if (passwordError) {
+      return { error: `Password update failed: ${passwordError.message}` }
+    }
+  }
+
+  const first_name = first_name_raw || prof?.first_name?.trim() || ''
+  const last_name = last_name_raw || prof?.last_name?.trim() || ''
+
+  if (!first_name || !last_name) {
+    return { error: 'First name and last name are required.' }
+  }
+
+  const display_name = profileDisplayNameForDb({
+    first_name,
+    last_name,
+    nickname,
+  })
 
   const payload = {
-    display_name: displayName,
+    first_name,
+    last_name,
+    nickname,
+    display_name,
     notification_email_invites: emailInvites,
     notification_email_study_activity: emailStudy,
     account_setup_completed_at: new Date().toISOString(),
   }
 
-  const { data: existing } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  const { error } = existing
+  const { error } = prof?.id
     ? await supabase.from('profiles').update(payload).eq('id', user.id)
     : await supabase.from('profiles').insert({ id: user.id, ...payload })
 

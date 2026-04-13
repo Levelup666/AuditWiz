@@ -10,6 +10,11 @@ import DeleteStudyButton from '@/components/studies/delete-study-button'
 import { ChevronLeft } from 'lucide-react'
 import type { RecordTemplate } from '@/lib/types'
 import { getStudyCompletionEligibility } from '@/lib/study-completion-eligibility'
+import {
+  getEffectiveStudyMemberCap,
+  getPlatformDefaultStudyMemberCap,
+  getStudyAbsoluteMemberCap,
+} from '@/lib/study-member-cap'
 
 interface SettingsPageProps {
   params: Promise<{ id: string }>
@@ -34,7 +39,7 @@ export default async function StudySettingsPage({ params }: SettingsPageProps) {
   const { data: study, error } = await supabase
     .from('studies')
     .select(
-      'id, title, status, required_approval_count, require_review_before_approval, allow_creator_approval, metadata'
+      'id, title, status, required_approval_count, require_review_before_approval, allow_creator_approval, metadata, max_members'
     )
     .eq('id', studyId)
     .single()
@@ -44,11 +49,25 @@ export default async function StudySettingsPage({ params }: SettingsPageProps) {
   }
 
   const metadata = (study.metadata ?? {}) as Record<string, unknown>
+  const { data: memberRows } = await supabase
+    .from('study_members')
+    .select('user_id')
+    .eq('study_id', studyId)
+    .is('revoked_at', null)
+
+  const distinctMemberCount = new Set((memberRows ?? []).map((r) => r.user_id)).size
+  const platformDefaultCap = getPlatformDefaultStudyMemberCap()
+  const absoluteMaxMembers = getStudyAbsoluteMemberCap()
+  const effectiveMemberCap = getEffectiveStudyMemberCap({
+    max_members: study.max_members ?? null,
+  })
+
   const initial = {
     required_approval_count: study.required_approval_count ?? 1,
     require_review_before_approval: study.require_review_before_approval ?? true,
     allow_creator_approval: study.allow_creator_approval ?? false,
     ai_enabled: metadata.ai_enabled !== false,
+    max_members: study.max_members ?? null,
   }
 
   const recordTemplates = (metadata.record_templates ?? []) as RecordTemplate[]
@@ -81,6 +100,10 @@ export default async function StudySettingsPage({ params }: SettingsPageProps) {
         studyId={studyId}
         initial={initial}
         studyIsActive={studyIsActive}
+        distinctMemberCount={distinctMemberCount}
+        platformDefaultCap={platformDefaultCap}
+        absoluteMaxMembers={absoluteMaxMembers}
+        effectiveMemberCap={effectiveMemberCap}
       />
       <RecordTemplatesEditor
         studyId={studyId}

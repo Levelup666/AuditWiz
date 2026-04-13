@@ -7,6 +7,7 @@ import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 import { isValidInstitutionResearchField } from '@/lib/institution-research-types'
 import { parseAllowExternalFromForm } from '@/lib/institution-collaboration'
+import { upsertProfileLegalNames } from '@/lib/profile/upsert-legal-names'
 
 function slugify(text: string): string {
   return text
@@ -23,6 +24,13 @@ export async function createInstitution(formData: FormData) {
 
   if (!user) {
     redirect('/auth/signin')
+  }
+
+  const firstName = (formData.get('first_name') as string)?.trim() ?? ''
+  const lastName = (formData.get('last_name') as string)?.trim() ?? ''
+  const nameErr = await upsertProfileLegalNames(supabase, user.id, firstName, lastName)
+  if (nameErr.error) {
+    return { error: nameErr.error }
   }
 
   const name = (formData.get('name') as string)?.trim()
@@ -112,23 +120,8 @@ export async function createInstitution(formData: FormData) {
     }
   )
 
-  const { data: existingProfile } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('id', user.id)
-    .maybeSingle()
   const completedAt = new Date().toISOString()
-  if (existingProfile) {
-    await supabase
-      .from('profiles')
-      .update({ account_setup_completed_at: completedAt })
-      .eq('id', user.id)
-  } else {
-    await supabase.from('profiles').insert({
-      id: user.id,
-      account_setup_completed_at: completedAt,
-    })
-  }
+  await supabase.from('profiles').update({ account_setup_completed_at: completedAt }).eq('id', user.id)
 
   revalidatePath('/onboarding')
   revalidatePath('/institutions')

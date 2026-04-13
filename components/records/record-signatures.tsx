@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { Badge } from '@/components/ui/badge'
 import OrcidBadge from '@/components/profile/orcid-badge'
+import { formatMemberListName } from '@/lib/profile/member-display-name'
 
 interface RecordSignaturesProps {
   recordId: string
@@ -24,14 +25,25 @@ export default async function RecordSignatures({ recordId, recordVersion }: Reco
   const signerIds = [...new Set((signatures as any[]).map((s) => s.signer_id))]
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, orcid_id, orcid_verified')
+    .select('id, orcid_id, orcid_verified, first_name, last_name, nickname, display_name')
     .in('id', signerIds)
   const profileByUser = (profiles ?? []).reduce(
     (acc, p) => {
       acc[p.id] = p
       return acc
     },
-    {} as Record<string, { id: string; orcid_id: string | null; orcid_verified: boolean }>
+    {} as Record<
+      string,
+      {
+        id: string
+        orcid_id: string | null
+        orcid_verified: boolean
+        first_name: string | null
+        last_name: string | null
+        nickname: string | null
+        display_name: string | null
+      }
+    >
   )
 
   const getIntentBadge = (intent: string) => {
@@ -52,13 +64,28 @@ export default async function RecordSignatures({ recordId, recordVersion }: Reco
     <div className="space-y-4">
       {signatures.map((sig: any) => {
         const profile = profileByUser[sig.signer_id]
+        const signerEmail = typeof sig.signer?.email === 'string' ? sig.signer.email : ''
+        const listName = profile
+          ? formatMemberListName(
+              {
+                nickname: profile.nickname,
+                first_name: profile.first_name,
+                last_name: profile.last_name,
+                display_name: profile.display_name,
+              },
+              { email: signerEmail, userId: sig.signer_id }
+            )
+          : signerEmail || 'Unknown'
         return (
         <div key={sig.id} className="p-4 border border-gray-200 rounded-lg">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2 flex-wrap">
               {getIntentBadge(sig.intent)}
               <span className="text-sm font-medium">
-                {sig.signer?.email || 'Unknown'}
+                {listName}
+                {signerEmail && listName !== signerEmail ? (
+                  <span className="text-muted-foreground font-normal"> · {signerEmail}</span>
+                ) : null}
               </span>
               {profile?.orcid_id && (
                 <OrcidBadge

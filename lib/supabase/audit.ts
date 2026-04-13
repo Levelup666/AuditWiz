@@ -2,6 +2,7 @@
 // All audit events are append-only and immutable
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getAuditUiRetentionCutoffIso } from '@/lib/audit-ui-retention'
 import { createClient } from './server'
 import { AuditActionType, SystemActionMetadata } from '@/lib/types'
 
@@ -113,6 +114,7 @@ export async function getAuditTrail(
     .select('*')
     .eq('target_entity_type', targetEntityType)
     .eq('target_entity_id', targetEntityId)
+    .gte('timestamp', getAuditUiRetentionCutoffIso())
     .order('timestamp', { ascending: false })
     .limit(limit);
 
@@ -136,6 +138,7 @@ export async function getAllAuditEvents(
   let query = supabase
     .from('audit_events')
     .select('*')
+    .gte('timestamp', getAuditUiRetentionCutoffIso())
     .order('timestamp', { ascending: false })
     .limit(limit);
 
@@ -159,21 +162,26 @@ export async function getAuditEventsForExport(
   studyId?: string | null,
   from?: string | null,
   to?: string | null,
-  limit: number = 5000
+  limit: number = 5000,
+  studyIdsFilter?: string[] | null
 ) {
   const supabase = await createClient();
+
+  const retentionFloor = getAuditUiRetentionCutoffIso()
+  const effectiveFrom =
+    from && from > retentionFloor ? from : retentionFloor
 
   let query = supabase
     .from('audit_events')
     .select('*')
+    .gte('timestamp', effectiveFrom)
     .order('timestamp', { ascending: false })
     .limit(limit);
 
   if (studyId) {
     query = query.eq('study_id', studyId);
-  }
-  if (from) {
-    query = query.gte('timestamp', from);
+  } else if (studyIdsFilter && studyIdsFilter.length > 0) {
+    query = query.in('study_id', studyIdsFilter);
   }
   if (to) {
     query = query.lte('timestamp', to);
@@ -186,4 +194,51 @@ export async function getAuditEventsForExport(
   }
 
   return data ?? [];
+}
+
+export type AuditEventsCursor = { timestamp: string; id: string }
+
+/**
+ * Keyset-paged audit events for the Logs hub (RPC + RLS). studyIds must be non-empty.
+ */
+export async function listAuditEventsPage(opts: {
+  studyIds: string[]
+  targetEntityType?: string | null
+  cursor?: AuditEventsCursor | null
+  limit?: number
+}): Promise<{ events: Record<string, unknown>[]; nextCursor: AuditEventsCursor | null }> {
+  if (opts.studyIds.length === 0) {
+    return { events: [], nextCursor: null }
+  }
+
+  const supabase = await createClient()
+  const pageSize = Math.min(Math.max(opts.limit ?? 40, 1), 100)
+  const fetchLimit = pageSize + 1
+
+  const targetType = opts.targetEntityType?.trim()
+  const { data, error } = await supabase.rpc('audit_events_page_for_viewer', {
+    p_cutoff: getAuditUiRetentionCutoffIso(),
+    p_study_ids: opts.studyIds,
+    p_target_entity_type: targetType && targetType.length > 0 ? targetType : null,
+    p_cursor_ts: opts.cursor?.timestamp ?? null,
+    p_cursor_id: opts.cursor?.id ?? null,
+    p_limit: fetchLimit,
+  })
+
+  if (error) {
+    throw new Error(`Failed to list audit events: ${error.message}`)
+  }
+
+  const rows = (data ?? []) as Record<string, unknown>[]
+  const hasMore = rows.length > pageSize
+  const events = hasMore ? rows.slice(0, pageSize) : rows
+  let nextCursor: AuditEventsCursor | null = null
+  if (hasMore && events.length > 0) {
+    const last = events[events.length - 1]
+    nextCursor = {
+      timestamp: String(last.timestamp),
+      id: String(last.id),
+    }
+  }
+  return { events, nextCursor }
 }

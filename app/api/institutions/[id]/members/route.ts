@@ -5,6 +5,7 @@ import { canManageInstitution } from '@/lib/supabase/permissions'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 import { validateInstitutionMemberRevocation } from '@/lib/supabase/member-revocation'
+import { formatMemberListName } from '@/lib/profile/member-display-name'
 
 export async function GET(
   request: NextRequest,
@@ -47,10 +48,35 @@ export async function GET(
     }
   }
 
-  const withEmails = (members || []).map((m) => ({
-    ...m,
-    email: emails[m.user_id] ?? m.user_id.slice(0, 8) + '…',
-  }))
+  const userIds = [...new Set((members ?? []).map((m) => m.user_id))]
+  const { data: profileRows } =
+    userIds.length > 0
+      ? await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, nickname, display_name')
+          .in('id', userIds)
+      : { data: null as null }
+
+  const profileByUser = new Map((profileRows ?? []).map((p) => [p.id, p]))
+
+  const withEmails = (members || []).map((m) => {
+    const email = emails[m.user_id] ?? m.user_id.slice(0, 8) + '…'
+    const prof = profileByUser.get(m.user_id)
+    const member_display_name = formatMemberListName(
+      {
+        nickname: prof?.nickname,
+        first_name: prof?.first_name,
+        last_name: prof?.last_name,
+        display_name: prof?.display_name,
+      },
+      { email, userId: m.user_id }
+    )
+    return {
+      ...m,
+      email,
+      member_display_name,
+    }
+  })
 
   return NextResponse.json(withEmails)
 }

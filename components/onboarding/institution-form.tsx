@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -17,9 +16,16 @@ function slugify(text: string): string {
     .replace(/^-|-$/g, '')
 }
 
-export default function InstitutionForm() {
-  const router = useRouter()
+export default function InstitutionForm({
+  initialFirstName = '',
+  initialLastName = '',
+}: {
+  initialFirstName?: string
+  initialLastName?: string
+}) {
   const [pending, setPending] = useState(false)
+  const [firstName, setFirstName] = useState(initialFirstName)
+  const [lastName, setLastName] = useState(initialLastName)
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [description, setDescription] = useState('')
@@ -45,6 +51,38 @@ export default function InstitutionForm() {
 
   return (
     <form onSubmit={handleSubmit} className="max-w-xl space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <Label htmlFor="first_name">Your first name *</Label>
+          <Input
+            id="first_name"
+            name="first_name"
+            type="text"
+            autoComplete="given-name"
+            required
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            className="mt-1"
+          />
+        </div>
+        <div>
+          <Label htmlFor="last_name">Your last name *</Label>
+          <Input
+            id="last_name"
+            name="last_name"
+            type="text"
+            autoComplete="family-name"
+            required
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            className="mt-1"
+          />
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Shown to collaborators as First L. in member lists unless you set a nickname later in account
+        settings.
+      </p>
       <div>
         <Label htmlFor="research_field">Primary research field *</Label>
         <select

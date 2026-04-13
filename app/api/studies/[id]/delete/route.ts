@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { canManageStudyMembers } from '@/lib/supabase/permissions'
+import { hasStudyAdminRoleOnly } from '@/lib/supabase/permissions'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 
@@ -19,7 +19,7 @@ export async function POST(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const allowed = await canManageStudyMembers(user.id, studyId)
+  const allowed = await hasStudyAdminRoleOnly(user.id, studyId)
   if (!allowed) {
     return NextResponse.json(
       { error: 'You do not have permission to delete this study' },

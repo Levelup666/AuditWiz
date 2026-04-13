@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import RecordSignatures from '@/components/records/record-signatures'
 import RecordContentSummary from '@/components/records/record-content-summary'
 import OrcidBadge from '@/components/profile/orcid-badge'
+import { formatMemberListName } from '@/lib/profile/member-display-name'
 
 interface SharePageProps {
   params: Promise<{ recordVersionId: string }>
@@ -95,9 +96,21 @@ export default async function SharePage({ params, searchParams }: SharePageProps
 
   const { data: creatorProfile } = await admin
     .from('profiles')
-    .select('orcid_id, orcid_verified, display_name')
+    .select('orcid_id, orcid_verified, first_name, last_name, nickname, display_name')
     .eq('id', record.created_by)
     .maybeSingle()
+
+  const creatorListName = creatorProfile
+    ? formatMemberListName(
+        {
+          nickname: creatorProfile.nickname,
+          first_name: creatorProfile.first_name,
+          last_name: creatorProfile.last_name,
+          display_name: creatorProfile.display_name,
+        },
+        { userId: record.created_by }
+      )
+    : 'Unknown'
 
   const { data: anchor } = await admin
     .from('blockchain_anchors')
@@ -118,10 +131,10 @@ export default async function SharePage({ params, searchParams }: SharePageProps
         </h1>
         <p className="text-sm text-gray-500 mt-1">
           Created: {new Date(record.created_at).toLocaleString()}
-          {creatorProfile && (creatorProfile.orcid_id || creatorProfile.display_name) && (
+          {creatorProfile && (creatorProfile.orcid_id || creatorListName !== 'Unknown') && (
             <span className="ml-2 inline-flex items-center gap-1">
               Contributor:{' '}
-              {creatorProfile.display_name || 'Unknown'}
+              {creatorListName !== 'Unknown' ? creatorListName : 'Unknown'}
               {creatorProfile.orcid_id && (
                 <OrcidBadge
                   orcidId={creatorProfile.orcid_id}

@@ -3,16 +3,11 @@ import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 import { isActiveInstitutionMember } from '@/lib/supabase/permissions'
 import { getStudyCollaborationPolicy } from '@/lib/study-institution-policy'
-
-function permissionFlagsForRole(role: string) {
-  return {
-    can_view: true,
-    can_comment: true,
-    can_review: ['reviewer', 'approver', 'auditor', 'admin'].includes(role),
-    can_approve: ['approver', 'admin'].includes(role),
-    can_share: ['approver', 'admin'].includes(role),
-  }
-}
+import { getStudyRoleDefinitionIdBySlug } from '@/lib/supabase/study-roles'
+import {
+  activeStudyAssignmentCount,
+  assertRoomForNewStudyParticipant,
+} from '@/lib/study-participant-room'
 
 export type AcceptStudyInviteResult =
   | { ok: true }
@@ -92,18 +87,59 @@ export async function acceptStudyInviteForUser(
     }
   }
 
-  const flags = permissionFlagsForRole(invite.role)
+  const roleSlug = String(invite.role ?? '').trim()
+  const defId = await getStudyRoleDefinitionIdBySlug(supabase, studyId, roleSlug)
+  if (!defId) {
+    return { ok: false, status: 500, error: 'Study role is not configured' }
+  }
 
-  const { error: insertError } = await supabase.from('study_members').insert({
-    study_id: studyId,
-    user_id: userId,
-    role: invite.role,
-    granted_by: invite.invited_by,
-    ...flags,
-  })
+  let existingSlots: number
+  try {
+    existingSlots = await activeStudyAssignmentCount(supabase, studyId, userId)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Assignment check failed'
+    return { ok: false, status: 500, error: msg }
+  }
+
+  if (existingSlots >= 2) {
+    return {
+      ok: false,
+      status: 409,
+      error: 'You already have the maximum number of roles on this study',
+    }
+  }
+
+  if (existingSlots === 0) {
+    const room = await assertRoomForNewStudyParticipant(supabase, studyId, userId)
+    if (!room.ok) {
+      return { ok: false, status: 403, error: room.message }
+    }
+  }
+
+  const { data: existingSame } = await supabase
+    .from('study_member_role_assignments')
+    .select('id')
+    .eq('study_id', studyId)
+    .eq('user_id', userId)
+    .eq('role_definition_id', defId)
+    .is('revoked_at', null)
+    .maybeSingle()
+
+  if (existingSame) {
+    return { ok: false, status: 409, error: 'You are already a member of this study' }
+  }
+
+  const { error: insertError } = await supabase
+    .from('study_member_role_assignments')
+    .insert({
+      study_id: studyId,
+      user_id: userId,
+      role_definition_id: defId,
+      granted_by: invite.invited_by,
+    })
 
   if (insertError) {
-    if (insertError.code === '23505') {
+    if (insertError.code === '23505' || insertError.message.includes('At most two')) {
       return { ok: false, status: 409, error: 'You are already a member of this study' }
     }
     return { ok: false, status: 500, error: insertError.message }

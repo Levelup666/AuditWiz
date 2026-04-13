@@ -27,7 +27,12 @@ export default function AcceptInstitutionInviteButton({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invite_id: inviteId }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
+      if (data?.requires_account_setup) {
+        toast.error('Password required', 'Set a password in account setup before accepting this invite.')
+        router.push(`/account/setup?next=${encodeURIComponent(`/invites/institution/${inviteId}`)}`)
+        return
+      }
       if (!res.ok) throw new Error(data.error || res.statusText)
       toast.success('Invite accepted')
       router.push(`/institutions/${institutionId}`)

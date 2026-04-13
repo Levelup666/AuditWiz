@@ -13,6 +13,8 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
   const { next: nextParam, invite: inviteParam } = await searchParams
   const nextPath = safeAppPath(nextParam ?? null, '/invites')
   const inviteToken = inviteParam?.trim() || ''
+  const inviteDriven =
+    Boolean(inviteToken) || nextPath.startsWith('/invite/')
 
   const supabase = await createClient()
   const {
@@ -26,7 +28,7 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
   const { data: profile } = await supabase
     .from('profiles')
     .select(
-      'display_name, notification_email_invites, notification_email_study_activity, account_setup_completed_at'
+      'first_name, last_name, nickname, notification_email_invites, notification_email_study_activity, account_setup_completed_at'
     )
     .eq('id', user.id)
     .maybeSingle()
@@ -39,9 +41,18 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
           Set up your account
         </h1>
         <p className="mt-2 text-muted-foreground">
-          You were invited to AuditWiz. Choose a password (if you have not already), how you want to
-          be shown to others, and which optional emails you want. Then continue to your invites or
-          dashboard.
+          {inviteDriven ? (
+            <>
+              Finish getting started after your invitation: set a password, enter your first and
+              last name (and optional nickname), then choose notification preferences. You need a
+              password and legal name on file before you can accept the invite in the app.
+            </>
+          ) : (
+            <>
+              Complete your profile: first and last name, optional nickname, and notification
+              preferences. You can skip and return later from your profile or Invites.
+            </>
+          )}
         </p>
       </div>
 
@@ -49,16 +60,20 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
         nextPath={nextPath}
         inviteToken={inviteToken || undefined}
         userEmail={user.email ?? ''}
-        initialDisplayName={profile?.display_name ?? null}
+        initialFirstName={profile?.first_name ?? null}
+        initialLastName={profile?.last_name ?? null}
+        initialNickname={profile?.nickname ?? null}
         initialEmailInvites={profile?.notification_email_invites ?? true}
         initialEmailStudy={profile?.notification_email_study_activity ?? true}
       />
 
-      <div className="flex justify-center border-t pt-6">
-        <Button variant="ghost" size="sm" asChild>
-          <Link href={nextPath}>Skip for now</Link>
-        </Button>
-      </div>
+      {!inviteDriven ? (
+        <div className="flex justify-center border-t pt-6">
+          <Button variant="ghost" size="sm" asChild>
+            <Link href={nextPath}>Skip for now</Link>
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }

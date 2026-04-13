@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 import { canCreateStudyInInstitution } from '@/lib/supabase/permissions'
+import { getStudyRoleDefinitionIdBySlug } from '@/lib/supabase/study-roles'
 
 export async function createStudy(formData: FormData) {
   const supabase = await createClient()
@@ -58,15 +59,22 @@ export async function createStudy(formData: FormData) {
     return { error: studyError.message }
   }
 
-  const { error: memberError } = await supabase.from('study_members').insert({
-    study_id: study.id,
-    user_id: userId,
-    role: 'admin',
-    granted_by: userId,
-  })
+  const adminDefId = await getStudyRoleDefinitionIdBySlug(supabase, study.id, 'admin')
+  if (!adminDefId) {
+    return { error: 'Study roles are not ready yet. Try again in a moment.' }
+  }
 
-  if (memberError) {
-    return { error: memberError.message }
+  const { error: assignError } = await supabase
+    .from('study_member_role_assignments')
+    .insert({
+      study_id: study.id,
+      user_id: userId,
+      role_definition_id: adminDefId,
+      granted_by: userId,
+    })
+
+  if (assignError) {
+    return { error: assignError.message }
   }
 
   const newStateHash = await generateHash({

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { canManageStudyMembers } from '@/lib/supabase/permissions'
+import { hasStudyAdminRoleOnly } from '@/lib/supabase/permissions'
 import { assertStudyIsActive } from '@/lib/supabase/study-status'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
@@ -32,7 +32,7 @@ export async function POST(
     return NextResponse.json({ error: 'Record not found' }, { status: 404 })
   }
 
-  const allowed = await canManageStudyMembers(user.id, record.study_id)
+  const allowed = await hasStudyAdminRoleOnly(user.id, record.study_id)
   if (!allowed) {
     return NextResponse.json(
       { error: 'You do not have permission to delete records in this study' },

@@ -21,14 +21,18 @@ import {
   STUDY_REVOKE,
 } from '@/lib/supabase/member-revocation'
 import { cn } from '@/lib/utils'
+import StudyRoleCatalog from '@/components/studies/study-role-catalog'
+import type { StudyRoleDefinitionRow } from '@/lib/supabase/study-roles'
 
 interface Member {
   id: string
   user_id: string
   role: string
+  role_definition_id?: string | null
   granted_at: string
   granted_by: string | null
   email: string
+  member_display_name?: string
   orcid_id?: string | null
   can_view?: boolean
   can_comment?: boolean
@@ -37,10 +41,16 @@ interface Member {
   can_share?: boolean
 }
 
+interface MembersMeta {
+  member_cap: number
+  distinct_member_count: number
+}
+
 type InstitutionCandidate = {
   user_id: string
   email: string
   display_name: string | null
+  member_display_name: string
   orcid_id: string | null
 }
 
@@ -60,20 +70,27 @@ function studyRevokeDisabled(
   if (m.user_id === currentUserId) {
     return { disabled: true, title: STUDY_REVOKE.self }
   }
-  if (members.length <= 1) {
+  const remaining = members.filter((x) => x.id !== m.id)
+  const distinctRemaining = new Set(remaining.map((x) => x.user_id)).size
+  if (distinctRemaining === 0) {
     return { disabled: true, title: STUDY_REVOKE.lastMember }
   }
-  const privileged = members.filter((x) => isStudyPrivilegedRole(x.role))
-  if (privileged.length <= 1 && isStudyPrivilegedRole(m.role)) {
-    return { disabled: true, title: STUDY_REVOKE.lastPrivileged }
+  if (isStudyPrivilegedRole(m.role)) {
+    const privilegedRemaining = new Set<string>()
+    for (const x of remaining) {
+      if (isStudyPrivilegedRole(x.role)) privilegedRemaining.add(x.user_id)
+    }
+    if (privilegedRemaining.size === 0) {
+      return { disabled: true, title: STUDY_REVOKE.lastPrivileged }
+    }
   }
   return { disabled: false }
 }
 
 function candidateLabel(c: InstitutionCandidate): string {
-  const name = c.display_name?.trim()
-  if (name && c.email) return `${name} · ${c.email}`
-  if (name) return name
+  const label = c.member_display_name?.trim() || c.display_name?.trim()
+  if (label && c.email) return `${label} · ${c.email}`
+  if (label) return label
   return c.email || c.user_id.slice(0, 8) + '…'
 }
 
@@ -83,28 +100,35 @@ function toastStudyInviteEmail(
     pending?: boolean
     email_dispatched?: boolean
     email_dispatch_message?: string
-    email_supabase_error?: { code?: string }
+    email_supabase_error?: { code?: string; message?: string }
   },
   variant: 'member_added' | 'invite_pending'
 ) {
-  const hint =
+  const codeHint =
     data.email_supabase_error?.code &&
     typeof data.email_supabase_error.code === 'string'
-      ? ` (Auth error code: ${data.email_supabase_error.code})`
+      ? ` Auth code: ${data.email_supabase_error.code}.`
       : ''
+  const msgHint =
+    data.email_supabase_error?.message &&
+    typeof data.email_supabase_error.message === 'string'
+      ? ` Details: ${data.email_supabase_error.message.slice(0, 280)}${data.email_supabase_error.message.length > 280 ? '…' : ''}`
+      : ''
+  const hint = codeHint + msgHint
   if (data.email_dispatched === false && data.email_dispatch_message) {
     toast.warning(
       variant === 'invite_pending' ? 'Invite created' : 'Member added',
-      data.email_dispatch_message + hint
+      (data.email_dispatch_message ?? '') + hint
     )
     return
   }
+  const pendingDefault =
+    'Pending invite created. They are not a study member until they accept under Invites or via their email link.'
   toast.success(
     variant === 'invite_pending' ? 'Pending invite created' : 'Member added',
-    data.message ??
-      (variant === 'invite_pending'
-        ? 'Pending invite created'
-        : 'They can also open Invites in the app.')
+    variant === 'invite_pending'
+      ? (data.message?.trim() || pendingDefault)
+      : (data.message ?? 'They can also open Invites in the app.')
   )
 }
 
@@ -115,6 +139,8 @@ export default function StudyMembersManager({
   allowExternalCollaborators,
 }: StudyMembersManagerProps) {
   const [members, setMembers] = useState<Member[]>([])
+  const [meta, setMeta] = useState<MembersMeta | null>(null)
+  const [roleDefinitions, setRoleDefinitions] = useState<StudyRoleDefinitionRow[]>([])
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState('')
   const [orcidId, setOrcidId] = useState('')
@@ -146,13 +172,32 @@ export default function StudyMembersManager({
     setRole('reviewer')
   }, [studyId, institutionId, allowExternalCollaborators])
 
+  const fetchRoleDefinitions = async () => {
+    try {
+      const res = await fetch(`/api/studies/${studyId}/roles`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || res.statusText)
+      setRoleDefinitions(data.roles ?? [])
+    } catch {
+      setRoleDefinitions([])
+    }
+  }
+
   const fetchMembers = async () => {
     setLoading(true)
     try {
       const res = await fetch(`/api/studies/${studyId}/members`)
-      if (!res.ok) throw new Error(await res.json().then((b) => b.error || res.statusText))
       const data = await res.json()
-      setMembers(data)
+      if (!res.ok) throw new Error(data.error || res.statusText)
+      setMembers(Array.isArray(data.members) ? data.members : [])
+      setMeta(
+        data.meta && typeof data.meta.member_cap === 'number'
+          ? {
+              member_cap: data.meta.member_cap,
+              distinct_member_count: data.meta.distinct_member_count ?? 0,
+            }
+          : null
+      )
     } catch (e) {
       toast.error('Load failed', e instanceof Error ? e.message : 'Failed to load members')
     } finally {
@@ -181,7 +226,16 @@ export default function StudyMembersManager({
 
   useEffect(() => {
     fetchMembers()
+    fetchRoleDefinitions()
   }, [studyId])
+
+  useEffect(() => {
+    if (roleDefinitions.length === 0) return
+    const slugs = new Set(roleDefinitions.map((r) => r.slug))
+    if (!slugs.has(role)) {
+      setRole(roleDefinitions[0]!.slug)
+    }
+  }, [roleDefinitions, role])
 
   useEffect(() => {
     if (useInstitutionPicker) {
@@ -275,7 +329,7 @@ export default function StudyMembersManager({
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || res.statusText)
-      toast.success('Member revoked')
+      toast.success('Role revoked')
       fetchMembers()
       fetchCandidates()
     } catch (e) {
@@ -299,6 +353,13 @@ export default function StudyMembersManager({
 
   return (
     <div className="space-y-6">
+      {meta && (
+        <p className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">Member seats:</span>{' '}
+          {meta.distinct_member_count} / {meta.member_cap} distinct people (cap includes everyone with any
+          role on this study).
+        </p>
+      )}
       <p className="text-sm text-muted-foreground max-w-3xl leading-relaxed">
         People with accounts can accept pending invites under <strong>Invites</strong> in the sidebar
         without using email links.
@@ -399,8 +460,8 @@ export default function StudyMembersManager({
                 </div>
                 {emptyCandidates && (
                   <p className="text-sm text-muted-foreground">
-                    Every active institution member is already on this study, or there are no members
-                    in the institution yet.
+                    Every institution member already has two roles on this study, or there are no
+                    institution members yet.
                   </p>
                 )}
               </div>
@@ -442,11 +503,22 @@ export default function StudyMembersManager({
                   onChange={(e) => setRole(e.target.value)}
                   className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <option value="creator">Creator</option>
-                  <option value="reviewer">Reviewer</option>
-                  <option value="approver">Approver</option>
-                  <option value="auditor">Auditor</option>
-                  <option value="admin">Admin</option>
+                  {(roleDefinitions.length > 0
+                    ? roleDefinitions
+                    : (
+                        [
+                          { id: 'creator', slug: 'creator', display_name: 'Creator' },
+                          { id: 'reviewer', slug: 'reviewer', display_name: 'Reviewer' },
+                          { id: 'approver', slug: 'approver', display_name: 'Approver' },
+                          { id: 'auditor', slug: 'auditor', display_name: 'Auditor' },
+                          { id: 'admin', slug: 'admin', display_name: 'Admin' },
+                        ] as Pick<StudyRoleDefinitionRow, 'id' | 'slug' | 'display_name'>[]
+                      )
+                  ).map((r) => (
+                    <option key={r.id} value={r.slug}>
+                      {r.display_name} ({r.slug})
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -477,9 +549,10 @@ export default function StudyMembersManager({
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead>Name</TableHead>
             <TableHead>Email</TableHead>
             <TableHead>ORCID</TableHead>
-            <TableHead>Role</TableHead>
+            <TableHead>Role (assignment)</TableHead>
             <TableHead>Added</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -489,7 +562,10 @@ export default function StudyMembersManager({
             const revoke = studyRevokeDisabled(m, members, currentUserId)
             return (
               <TableRow key={m.id}>
-                <TableCell className="font-medium">{m.email}</TableCell>
+                <TableCell className="font-medium">
+                  {m.member_display_name ?? m.email}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">{m.email}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {m.orcid_id ?? '—'}
                 </TableCell>
@@ -507,7 +583,7 @@ export default function StudyMembersManager({
                     disabled={revoke.disabled || revokingId === m.id}
                     title={revoke.title}
                   >
-                    {revokingId === m.id ? 'Revoking…' : 'Revoke'}
+                    {revokingId === m.id ? 'Revoking…' : 'Revoke role'}
                   </Button>
                 </TableCell>
               </TableRow>
@@ -518,6 +594,8 @@ export default function StudyMembersManager({
       {members.length === 0 && (
         <p className="text-muted-foreground">No members yet. Add one above.</p>
       )}
+
+      <StudyRoleCatalog studyId={studyId} onRolesMutated={fetchRoleDefinitions} />
     </div>
   )
 }

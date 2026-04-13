@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 import { toast } from '@/lib/toast'
+import { upsertProfileNamesAfterSignup } from '@/app/auth/actions'
 
 export default function SignUpForm({
   initialEmail = '',
@@ -18,6 +19,8 @@ export default function SignUpForm({
 }) {
   const router = useRouter()
   const [email, setEmail] = useState(initialEmail)
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -35,18 +38,30 @@ export default function SignUpForm({
       return
     }
 
+    const fn = firstName.trim()
+    const ln = lastName.trim()
+    if (!fn || !ln) {
+      toast.error('Validation error', 'First name and last name are required')
+      return
+    }
+
     setLoading(true)
 
     try {
       const supabase = createClient()
       const callbackNext = redirectedFrom
         ? `/auth/callback?next=${encodeURIComponent(redirectedFrom)}`
-        : '/auth/callback'
-      const { error: signUpError } = await supabase.auth.signUp({
+        : `/auth/callback?next=${encodeURIComponent('/onboarding')}`
+      const emailRedirectTo = `${window.location.origin}${callbackNext.startsWith('/') ? callbackNext : `/${callbackNext}`}`
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}${callbackNext.startsWith('/') ? callbackNext : `/${callbackNext}`}`,
+          emailRedirectTo,
+          data: {
+            first_name: fn,
+            last_name: ln,
+          },
         },
       })
 
@@ -56,10 +71,26 @@ export default function SignUpForm({
         return
       }
 
-      toast.success('Account created', 'Check your email to confirm your account')
-      router.push(redirectedFrom || '/studies')
+      const hasSession = Boolean(signUpData?.session)
+      if (hasSession) {
+        const nameRes = await upsertProfileNamesAfterSignup(fn, ln)
+        if (nameRes.error) {
+          toast.error('Profile', nameRes.error)
+          setLoading(false)
+          return
+        }
+      }
+      toast.success(
+        'Account created',
+        hasSession
+          ? redirectedFrom
+            ? 'Continue to complete your invitation.'
+            : 'Continue to create your institution.'
+          : 'Check your email to confirm your account.'
+      )
+      router.push(redirectedFrom || '/onboarding')
       router.refresh()
-    } catch (err) {
+    } catch {
       toast.error('Sign up failed', 'An unexpected error occurred')
       setLoading(false)
     }
@@ -68,6 +99,34 @@ export default function SignUpForm({
   return (
     <form onSubmit={handleSubmit} className="mt-8 space-y-6">
       <div className="space-y-4">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="firstName">First name</Label>
+            <Input
+              id="firstName"
+              name="firstName"
+              type="text"
+              autoComplete="given-name"
+              required
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="lastName">Last name</Label>
+            <Input
+              id="lastName"
+              name="lastName"
+              type="text"
+              autoComplete="family-name"
+              required
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+        </div>
         <div>
           <Label htmlFor="email">Email address</Label>
           <Input

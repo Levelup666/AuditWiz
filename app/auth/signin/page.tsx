@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import SignInForm from '@/components/auth/signin-form'
+import { AuthHashRedirect } from '@/components/auth/auth-hash-redirect'
 
 export default async function SignInPage({
   searchParams,
@@ -14,7 +15,7 @@ export default async function SignInPage({
   } = await supabase.auth.getUser()
 
   if (user) {
-    redirect('/studies')
+    redirect('/dashboard')
   }
 
   return (
@@ -33,7 +34,9 @@ export default async function SignInPage({
             </p>
           )}
         </div>
-        <SignInForm redirectedFrom={params.redirectedFrom} />
+        <AuthHashRedirect redirectedFrom={params.redirectedFrom}>
+          <SignInForm redirectedFrom={params.redirectedFrom} />
+        </AuthHashRedirect>
       </div>
     </div>
   )

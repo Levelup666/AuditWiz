@@ -11,6 +11,11 @@ type InviteActionsProps = {
   canAccept: boolean
 }
 
+type InviteApiError = Error & {
+  requiresAccountSetup?: boolean
+  setupPath?: string
+}
+
 export default function InviteActions({ rawToken, canAccept }: InviteActionsProps) {
   const router = useRouter()
   const [loading, setLoading] = useState<'accept' | 'decline' | null>(null)
@@ -22,7 +27,12 @@ export default function InviteActions({ rawToken, canAccept }: InviteActionsProp
       body: JSON.stringify({ token: rawToken }),
     })
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || res.statusText)
+    if (!res.ok) {
+      const err = new Error(data.error || res.statusText) as InviteApiError
+      err.requiresAccountSetup = Boolean(data.requires_account_setup)
+      err.setupPath = typeof data.setup_path === 'string' ? data.setup_path : undefined
+      throw err
+    }
     return data as { study_id?: string; institution_id?: string; kind?: string }
   }
 
@@ -40,6 +50,15 @@ export default function InviteActions({ rawToken, canAccept }: InviteActionsProp
       }
       router.refresh()
     } catch (e) {
+      const err = e as InviteApiError
+      if (err?.requiresAccountSetup) {
+        const setupPath =
+          err.setupPath ??
+          `/account/setup?next=${encodeURIComponent(`/invite/${rawToken}`)}&invite=${encodeURIComponent(rawToken)}`
+        toast.error('Password required', 'Set a password in account setup before accepting this invite.')
+        router.push(setupPath)
+        return
+      }
       toast.error('Could not accept', e instanceof Error ? e.message : 'Failed')
     } finally {
       setLoading(null)

@@ -21,30 +21,36 @@ export function isStudyPrivilegedRole(role: string): boolean {
   return role === 'admin' || role === 'creator'
 }
 
+/**
+ * Validates revoking one study_members row (one role assignment).
+ * Counts reflect state **after** that row is removed, so dual-role users are handled correctly.
+ */
 export function validateStudyMemberRevocation(input: {
   actorId: string
   targetUserId: string
   targetRole: string
-  activeMemberCount: number
-  activePrivilegedMemberCount: number
+  /** Distinct users who still have ≥1 active study_members row after this row is removed */
+  remainingDistinctMemberCount: number
+  /** Distinct users who still have ≥1 admin/creator row after this row is removed */
+  remainingPrivilegedDistinctUserCount: number
 }): { ok: true } | { ok: false; message: string } {
   const {
     actorId,
     targetUserId,
     targetRole,
-    activeMemberCount,
-    activePrivilegedMemberCount,
+    remainingDistinctMemberCount,
+    remainingPrivilegedDistinctUserCount,
   } = input
 
   if (targetUserId === actorId) {
     return { ok: false, message: STUDY_REVOKE.self }
   }
-  if (activeMemberCount <= 1) {
+  if (remainingDistinctMemberCount === 0) {
     return { ok: false, message: STUDY_REVOKE.lastMember }
   }
   if (
     isStudyPrivilegedRole(targetRole) &&
-    activePrivilegedMemberCount <= 1
+    remainingPrivilegedDistinctUserCount === 0
   ) {
     return { ok: false, message: STUDY_REVOKE.lastPrivileged }
   }

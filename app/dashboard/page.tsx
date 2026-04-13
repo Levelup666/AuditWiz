@@ -80,9 +80,9 @@ export default async function DashboardPage() {
             <CardDescription>
               View complete audit history
             </CardDescription>
-            <Link href="/dashboard/audit-trail" className="mt-4 block">
+            <Link href="/logs" className="mt-4 block">
               <Button variant="outline" size="sm" className="w-full">
-                View Audit Trail
+                View logs
               </Button>
             </Link>
           </CardContent>
@@ -107,10 +107,10 @@ export default async function DashboardPage() {
               View All Studies
             </Button>
           </Link>
-          <Link href="/dashboard/audit-trail">
+          <Link href="/logs">
             <Button variant="outline">
               <Activity className="mr-2 h-4 w-4" />
-              View Audit Trail
+              View logs
             </Button>
           </Link>
         </CardContent>

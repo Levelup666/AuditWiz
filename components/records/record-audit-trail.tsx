@@ -1,27 +1,11 @@
 import { getAuditTrail } from '@/lib/supabase/audit'
-import { createAdminClient } from '@/lib/supabase/admin'
-import { Badge } from '@/components/ui/badge'
 import { SYSTEM_ACTOR_ID } from '@/lib/types'
-import { ACTION_BADGE_STYLES, formatActionType, isSystemAuditActor } from '@/lib/audit-trail'
+import { getActorEmailsForAudit } from '@/lib/audit/get-actor-emails'
+import { AuditTrailSection } from '@/components/audit/audit-trail-section'
+import { AuditEventTimeline } from '@/components/audit/audit-event-timeline'
 
 interface RecordAuditTrailProps {
   recordId: string
-}
-
-async function getActorEmails(actorIds: string[]): Promise<Record<string, string>> {
-  const admin = createAdminClient()
-  const emails: Record<string, string> = {}
-  await Promise.all(
-    actorIds.map(async (id) => {
-      try {
-        const { data } = await admin.auth.admin.getUserById(id)
-        emails[id] = data.user?.email ?? id.slice(0, 8) + '…'
-      } catch {
-        emails[id] = id.slice(0, 8) + '…'
-      }
-    })
-  )
-  return emails
 }
 
 export default async function RecordAuditTrail({ recordId }: RecordAuditTrailProps) {
@@ -38,91 +22,19 @@ export default async function RecordAuditTrail({ recordId }: RecordAuditTrailPro
         .filter((id): id is string => !!id && id !== SYSTEM_ACTOR_ID)
     ),
   ]
-  const actorEmails = await getActorEmails(actorIds)
+  const actorEmails = await getActorEmailsForAudit(actorIds)
 
   return (
-    <div className="relative">
-      <div
-        className="absolute left-4 top-8 bottom-8 w-px bg-border"
-        aria-hidden
+    <AuditTrailSection
+      title="Audit activity"
+      description="Immutable log within the retention window. Open to view the timeline."
+      eventCount={events.length}
+    >
+      <AuditEventTimeline
+        events={events as Record<string, unknown>[]}
+        actorEmails={actorEmails}
+        context={{ kind: 'record' }}
       />
-      <div className="space-y-0">
-        {events.map((event: Record<string, unknown>) => (
-          <div key={String(event.id)} className="relative flex gap-4 pb-6 last:pb-0">
-            <div
-              className="relative z-10 mt-1.5 flex h-3 w-3 shrink-0 rounded-full border-2 border-background bg-primary"
-              aria-hidden
-            />
-            <div className="min-w-0 flex-1 rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge
-                    className={
-                      ACTION_BADGE_STYLES[String(event.action_type)] ??
-                      'bg-gray-100 text-gray-800'
-                    }
-                  >
-                    {formatActionType(String(event.action_type))}
-                  </Badge>
-                  <span className="text-sm text-gray-600">
-                    {new Date(String(event.timestamp)).toLocaleString()}
-                  </span>
-                </div>
-                {isSystemAuditActor({
-                  actor_id: event.actor_id as string | null,
-                  action_type: String(event.action_type),
-                  metadata: event.metadata,
-                }) && (
-                  <Badge variant="outline" className="bg-orange-50 w-fit">
-                    System Action
-                  </Badge>
-                )}
-              </div>
-              <div className="mt-2 space-y-1 text-sm">
-                {event.actor_id &&
-                !isSystemAuditActor({
-                  actor_id: event.actor_id as string | null,
-                  action_type: String(event.action_type),
-                  metadata: event.metadata,
-                }) ? (
-                  <p>
-                    <strong>Actor:</strong>{' '}
-                    {actorEmails[String(event.actor_id)] ??
-                      String(event.actor_id).slice(0, 8) + '…'}
-                    {event.actor_role_at_time
-                      ? ` (${event.actor_role_at_time})`
-                      : ''}
-                  </p>
-                ) : null}
-                {isSystemAuditActor({
-                  actor_id: event.actor_id as string | null,
-                  action_type: String(event.action_type),
-                  metadata: event.metadata,
-                }) &&
-                (event.metadata as Record<string, unknown>)?.model_version ? (
-                  <p>
-                    <strong>AI Model:</strong>{' '}
-                    {String(
-                      (event.metadata as Record<string, unknown>).model_version
-                    )}
-                  </p>
-                ) : null}
-                {event.metadata &&
-                Object.keys(event.metadata as object).length > 0 ? (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700">
-                      View Metadata
-                    </summary>
-                    <pre className="mt-2 overflow-auto rounded bg-gray-50 p-2 text-xs">
-                      {JSON.stringify(event.metadata as object, null, 2)}
-                    </pre>
-                  </details>
-                ) : null}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+    </AuditTrailSection>
   )
 }

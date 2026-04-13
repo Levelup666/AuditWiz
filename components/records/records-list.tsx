@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import RecordsListToolbar from '@/components/records/records-list-toolbar'
+import { formatMemberListName } from '@/lib/profile/member-display-name'
 
 interface RecordsListProps {
   studyId: string
@@ -82,10 +83,23 @@ export default async function RecordsList({
   })
   const { data: profiles } = await supabase
     .from('profiles')
-    .select('id, display_name')
+    .select('id, first_name, last_name, nickname, display_name')
     .in('id', Array.from(userIds))
 
-  const profileMap = new Map((profiles || []).map((p) => [p.id, p.display_name || 'Unknown']))
+  const profileMap = new Map(
+    (profiles || []).map((p) => [
+      p.id,
+      formatMemberListName(
+        {
+          nickname: p.nickname,
+          first_name: p.first_name,
+          last_name: p.last_name,
+          display_name: p.display_name,
+        },
+        { userId: p.id }
+      ),
+    ])
+  )
 
   const getStatusBadge = (status: string) => {
     const styles = {

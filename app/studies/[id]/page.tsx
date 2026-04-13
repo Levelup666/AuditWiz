@@ -9,6 +9,7 @@ import { canCreateRecord, canManageStudyMembers } from '@/lib/supabase/permissio
 import { Badge } from '@/components/ui/badge'
 import StudyDocumentationCard from '@/components/studies/study-documentation-card'
 import StudyAuditTrail from '@/components/studies/study-audit-trail'
+import { StudyContextHints } from '@/components/studies/study-scope-provider'
 
 interface StudyPageProps {
   params: Promise<{ id: string }>
@@ -56,6 +57,7 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
           edited.
         </div>
       )}
+      <StudyContextHints />
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">{study.title}</h1>

@@ -9,9 +9,9 @@ import {
   sendPendingInviteEmail,
 } from '@/lib/email/pending-invite-notification'
 import { generateInviteToken } from '@/lib/invites/token'
+import { getPendingInviteExpiresAt } from '@/lib/invites/pending-invite-expiry'
 
 const VALID_ROLES = ['admin', 'member'] as const
-const DEFAULT_EXPIRY_DAYS = 7
 
 export async function POST(
   request: NextRequest,
@@ -86,8 +86,7 @@ export async function POST(
     }
   }
 
-  const expiresAt = new Date()
-  expiresAt.setDate(expiresAt.getDate() + DEFAULT_EXPIRY_DAYS)
+  const expiresAt = getPendingInviteExpiresAt()
 
   const { rawToken, tokenHash } = generateInviteToken()
 
@@ -173,6 +172,7 @@ export async function POST(
     kind: 'institution',
     contextLabel: institution.name,
     inviteRawToken: rawToken,
+    expiresAtIso: expiresAt.toISOString(),
     supabaseAdmin: admin,
   })
 
