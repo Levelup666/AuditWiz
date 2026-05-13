@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canManageStudyMembers } from '@/lib/supabase/permissions'
 import { getStudyCollaborationPolicy } from '@/lib/study-institution-policy'
-import { formatMemberListName } from '@/lib/profile/member-display-name'
+import { resolveMemberDisplayName } from '@/lib/profile/resolve-member-display'
 
 export type StudyMemberCandidate = {
   user_id: string
@@ -100,26 +100,20 @@ export async function GET(
       .maybeSingle()
 
     let email = ''
+    let userMetadata: Record<string, unknown> | undefined
     try {
       const { data: u } = await admin.auth.admin.getUserById(row.user_id)
       email = u?.user?.email ?? ''
+      userMetadata = u?.user?.user_metadata as Record<string, unknown> | undefined
     } catch {
       email = ''
     }
 
-    const member_display_name = formatMemberListName(
-      {
-        nickname: profile?.nickname,
-        first_name: profile?.first_name,
-        last_name: profile?.last_name,
-        display_name: profile?.display_name,
-      },
-      { email, userId: row.user_id }
-    )
+    const member_display_name = resolveMemberDisplayName(profile, userMetadata, email)
 
     candidates.push({
       user_id: row.user_id,
-      email,
+      email: email || 'Email unavailable',
       display_name: profile?.display_name ?? null,
       member_display_name,
       orcid_id: profile?.orcid_id ?? null,
@@ -127,8 +121,8 @@ export async function GET(
   }
 
   candidates.sort((a, b) => {
-    const ae = (a.member_display_name || a.email || a.user_id).toLowerCase()
-    const be = (b.member_display_name || b.email || b.user_id).toLowerCase()
+    const ae = (a.member_display_name || a.email).toLowerCase()
+    const be = (b.member_display_name || b.email).toLowerCase()
     return ae.localeCompare(be)
   })
 

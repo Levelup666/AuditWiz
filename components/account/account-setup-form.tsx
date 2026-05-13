@@ -11,6 +11,8 @@ import { Loader2 } from 'lucide-react'
 interface AccountSetupFormProps {
   nextPath: string
   inviteToken?: string
+  /** From /account/setup?…&pending_invite=1 — require password before Invites. */
+  pendingInviteFlow?: boolean
   userEmail?: string
   initialFirstName: string | null
   initialLastName: string | null
@@ -22,6 +24,7 @@ interface AccountSetupFormProps {
 export default function AccountSetupForm({
   nextPath,
   inviteToken,
+  pendingInviteFlow = false,
   userEmail,
   initialFirstName,
   initialLastName,
@@ -42,13 +45,13 @@ export default function AccountSetupForm({
     const fn = (fdNames.get('first_name') as string)?.trim() ?? ''
     const ln = (fdNames.get('last_name') as string)?.trim() ?? ''
 
-    if (inviteToken && !pwd) {
-      toast.error('Password', 'Set a password to finish accepting your invitation.')
+    if ((inviteToken || pendingInviteFlow) && !pwd) {
+      toast.error('Password', 'Set a password to finish account setup before you accept invites.')
       return
     }
 
-    if (inviteToken && (!fn || !ln)) {
-      toast.error('Name', 'Enter your first and last name before accepting your invitation.')
+    if ((inviteToken || pendingInviteFlow) && (!fn || !ln)) {
+      toast.error('Name', 'Enter your first and last name before you continue.')
       return
     }
 
@@ -85,8 +88,9 @@ export default function AccountSetupForm({
     <form onSubmit={handleSubmit} className="space-y-8">
       <input type="hidden" name="next" value={nextPath} />
       {inviteToken ? <input type="hidden" name="invite_token" value={inviteToken} /> : null}
+      {pendingInviteFlow ? <input type="hidden" name="pending_invite_flow" value="on" /> : null}
 
-      {inviteToken && userEmail ? (
+      {(inviteToken || pendingInviteFlow) && userEmail ? (
         <div className="space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm">
           <div>
             <h2 className="text-lg font-semibold text-foreground">Email</h2>
@@ -154,8 +158,17 @@ export default function AccountSetupForm({
         <div>
           <h2 className="text-lg font-semibold text-foreground">Password</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            If you arrived from an invitation link, set a password you will use to sign in. Leave
-            blank to keep your current password.
+            {inviteToken || pendingInviteFlow ? (
+              <>
+                You need a password you will use to sign in before you can accept invitations in the
+                app.
+              </>
+            ) : (
+              <>
+                If you want to change your password, enter a new one here. Leave both fields blank to
+                keep your current password.
+              </>
+            )}
           </p>
         </div>
         <div className="grid max-w-md gap-4 sm:grid-cols-1">

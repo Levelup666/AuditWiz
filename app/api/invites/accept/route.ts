@@ -5,6 +5,7 @@ import { hashInviteToken } from '@/lib/invites/token'
 import { lookupInviteByTokenHash } from '@/lib/invites/lookup-invite-by-token'
 import { acceptStudyInviteForUser } from '@/lib/invites/accept-study'
 import { acceptInstitutionInviteForUser } from '@/lib/invites/accept-institution'
+import { acceptAuditEngagementForUser } from '@/lib/invites/accept-audit-engagement'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
       {
         error: 'Set a password in account setup before accepting this invitation.',
         requires_account_setup: true,
-        setup_path: '/account/setup?next=/invites',
+        setup_path: '/account/setup?next=/invites&pending_invite=1',
       },
       { status: 428 }
     )
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest) {
       {
         error: 'Add your first and last name in account setup before accepting this invitation.',
         requires_account_setup: true,
-        setup_path: '/account/setup?next=/invites',
+        setup_path: '/account/setup?next=/invites&pending_invite=1',
       },
       { status: 428 }
     )
@@ -86,6 +87,25 @@ export async function POST(request: NextRequest) {
       success: true,
       kind: 'study',
       study_id: resolved.studyId,
+    })
+  }
+
+  if (resolved.kind === 'audit_engagement') {
+    const result = await acceptAuditEngagementForUser(
+      supabase,
+      user.id,
+      user.email ?? undefined,
+      resolved.institutionId,
+      resolved.inviteId
+    )
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status })
+    }
+    return NextResponse.json({
+      success: true,
+      kind: 'audit_engagement',
+      engagement_id: result.engagementId,
+      institution_id: result.institutionId,
     })
   }
 

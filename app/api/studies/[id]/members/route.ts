@@ -16,7 +16,7 @@ import { assertStudyIsActive } from '@/lib/supabase/study-status'
 import { generateInviteToken } from '@/lib/invites/token'
 import { getPendingInviteExpiresAt } from '@/lib/invites/pending-invite-expiry'
 import { revokeExpiredPendingStudyEmailInvite } from '@/lib/invites/revoke-expired-pending-study-invite'
-import { formatMemberListName } from '@/lib/profile/member-display-name'
+import { resolveMemberDisplayName } from '@/lib/profile/resolve-member-display'
 import { getStudyRoleDefinitionIdBySlug } from '@/lib/supabase/study-roles'
 import { getEffectiveStudyMemberCap } from '@/lib/study-member-cap'
 import {
@@ -122,19 +122,21 @@ export async function GET(
 
   const admin = createAdminClient()
   const emails: Record<string, string> = {}
+  const metadataByUser: Record<string, Record<string, unknown> | undefined> = {}
   for (const m of members || []) {
     try {
       const { data: u } = await admin.auth.admin.getUserById(m.user_id)
       if (u?.user?.email) emails[m.user_id] = u.user.email
+      metadataByUser[m.user_id] = u?.user?.user_metadata as Record<string, unknown> | undefined
     } catch {
-      emails[m.user_id] = m.user_id.slice(0, 8) + '…'
+      // Keep the email field reserved for real auth emails; never expose UUID fallbacks here.
     }
   }
 
   const userIds = [...new Set((members ?? []).map((m) => m.user_id))]
   const { data: profileRows } =
     userIds.length > 0
-      ? await supabase
+      ? await admin
           .from('profiles')
           .select('id, orcid_id, first_name, last_name, nickname, display_name')
           .in('id', userIds)
@@ -148,20 +150,16 @@ export async function GET(
   )
 
   const withEmails = (members || []).map((m) => {
-    const email = emails[m.user_id] ?? m.user_id.slice(0, 8) + '…'
+    const realEmail = emails[m.user_id]
     const prof = profileByUser.get(m.user_id)
-    const member_display_name = formatMemberListName(
-      {
-        nickname: prof?.nickname,
-        first_name: prof?.first_name,
-        last_name: prof?.last_name,
-        display_name: prof?.display_name,
-      },
-      { email, userId: m.user_id }
+    const member_display_name = resolveMemberDisplayName(
+      prof,
+      metadataByUser[m.user_id],
+      realEmail
     )
     return {
       ...m,
-      email,
+      email: realEmail ?? 'Email unavailable',
       orcid_id: prof?.orcid_id ?? null,
       member_display_name,
     }

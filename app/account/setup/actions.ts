@@ -35,6 +35,7 @@ export async function saveAccountSetup(formData: FormData) {
   const nextRaw = (formData.get('next') as string) || '/invites'
   const next = safeNextPath(nextRaw)
   const inviteToken = (formData.get('invite_token') as string)?.trim() || ''
+  const pendingInviteFlow = formData.get('pending_invite_flow') === 'on'
   const password = (formData.get('password') as string)?.trim() || ''
   const confirmPassword = (formData.get('confirm_password') as string)?.trim() || ''
 
@@ -44,14 +45,14 @@ export async function saveAccountSetup(formData: FormData) {
     .eq('id', user.id)
     .maybeSingle()
 
-  const inviteDriven = Boolean(inviteToken)
+  const hasInviteToken = Boolean(inviteToken)
   const firstCompletion = !prof?.account_setup_completed_at
 
-  if (inviteDriven && !password) {
-    return { error: 'Set a password before accepting your invitation.' }
+  if ((hasInviteToken || (firstCompletion && pendingInviteFlow)) && !password) {
+    return { error: 'Set a password before continuing with your invitation.' }
   }
 
-  if (inviteDriven || firstCompletion) {
+  if (hasInviteToken || firstCompletion || pendingInviteFlow) {
     if (!first_name_raw || !last_name_raw) {
       return { error: 'First name and last name are required.' }
     }

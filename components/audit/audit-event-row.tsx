@@ -87,7 +87,7 @@ export function AuditEventRow({ event, actorEmails, context }: AuditEventRowProp
           {actorId && !system ? (
             <p>
               <strong>Actor:</strong>{' '}
-              {actorEmails[actorId] ?? String(actorId).slice(0, 8) + '…'}
+              {actorEmails[actorId] ?? 'Email unavailable'}
               {event.actor_role_at_time
                 ? ` (${String(event.actor_role_at_time)})`
                 : ''}

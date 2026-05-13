@@ -10,8 +10,48 @@ import {
 } from '@/lib/email/pending-invite-notification'
 import { generateInviteToken } from '@/lib/invites/token'
 import { getPendingInviteExpiresAt } from '@/lib/invites/pending-invite-expiry'
+import { revokeExpiredPendingInstitutionEmailInvite } from '@/lib/invites/revoke-expired-pending-institution-invite'
 
 const VALID_ROLES = ['admin', 'member'] as const
+
+function normalizeInviteEmail(email: string): string {
+  return email.trim().toLowerCase()
+}
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id: institutionId } = await params
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const allowed = await canManageInstitution(user.id, institutionId)
+  if (!allowed) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const { data: invites, error } = await supabase
+    .from('institution_invites')
+    .select('id, email, role, invited_at, expires_at, last_sent_at, resend_count')
+    .eq('institution_id', institutionId)
+    .is('accepted_at', null)
+    .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .order('invited_at', { ascending: false })
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ invites: invites ?? [] })
+}
 
 export async function POST(
   request: NextRequest,
@@ -86,7 +126,33 @@ export async function POST(
     }
   }
 
+  await revokeExpiredPendingInstitutionEmailInvite(supabase, institutionId, emailTrim)
+
+  const emailNorm = normalizeInviteEmail(emailTrim)
+  const { data: pendingRows } = await supabase
+    .from('institution_invites')
+    .select('id, expires_at, email')
+    .eq('institution_id', institutionId)
+    .is('accepted_at', null)
+    .is('revoked_at', null)
+
+  const openPending = pendingRows?.find(
+    (r) => normalizeInviteEmail(r.email ?? '') === emailNorm
+  )
+
+  if (openPending && new Date(openPending.expires_at) > new Date()) {
+    return NextResponse.json(
+      {
+        error: 'An invite is already pending for this email. Resend or revoke it from Pending invites.',
+        code: 'duplicate_pending_invite',
+        invite_id: openPending.id,
+      },
+      { status: 409 }
+    )
+  }
+
   const expiresAt = getPendingInviteExpiresAt()
+  const sentAt = new Date().toISOString()
 
   const { rawToken, tokenHash } = generateInviteToken()
 
@@ -99,24 +165,31 @@ export async function POST(
       invited_by: user.id,
       expires_at: expiresAt.toISOString(),
       token_hash: tokenHash,
+      last_sent_at: sentAt,
+      resend_count: 0,
     })
     .select('id')
     .single()
 
   if (inviteError) {
     if (inviteError.code === '23505') {
-      const { data: existingInvite } = await supabase
+      const { data: dupRows } = await supabase
         .from('institution_invites')
-        .select('id')
+        .select('id, expires_at, email')
         .eq('institution_id', institutionId)
-        .eq('email', emailTrim)
         .is('accepted_at', null)
-        .gt('expires_at', new Date().toISOString())
-        .maybeSingle()
-      if (existingInvite) {
+        .is('revoked_at', null)
+      const dupMatch = dupRows?.find(
+        (r) => normalizeInviteEmail(r.email ?? '') === emailNorm
+      )
+      if (dupMatch && new Date(dupMatch.expires_at) > new Date()) {
         return NextResponse.json(
-          { error: 'An invite is already pending for this email' },
-          { status: 400 }
+          {
+            error: 'An invite is already pending for this email. Resend or revoke it from Pending invites.',
+            code: 'duplicate_pending_invite',
+            invite_id: dupMatch.id,
+          },
+          { status: 409 }
         )
       }
     }

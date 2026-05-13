@@ -108,7 +108,7 @@ export default async function SharePage({ params, searchParams }: SharePageProps
           last_name: creatorProfile.last_name,
           display_name: creatorProfile.display_name,
         },
-        { userId: record.created_by }
+        undefined
       )
     : 'Unknown'
 

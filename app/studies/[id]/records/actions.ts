@@ -6,8 +6,15 @@ import { createClient } from '@/lib/supabase/server'
 import { generateHash } from '@/lib/crypto'
 import { canCreateRecord } from '@/lib/supabase/permissions'
 import { assertStudyIsActive } from '@/lib/supabase/study-status'
+import { createAuditEvent } from '@/lib/supabase/audit'
 
-export async function createRecord(studyId: string, formData: FormData) {
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+export async function createRecord(
+  studyId: string,
+  formData: FormData
+): Promise<void | { error: string; recordId?: string }> {
   const supabase = await createClient()
   const {
     data: { user },
@@ -30,6 +37,30 @@ export async function createRecord(studyId: string, formData: FormData) {
 
   const recordNumber = formData.get('record_number') as string
   const contentRaw = formData.get('content') as string
+  const taskIdRaw = (formData.get('task_id') as string | null)?.trim() ?? ''
+  const taskId = taskIdRaw && UUID_RE.test(taskIdRaw) ? taskIdRaw : null
+
+  if (taskId) {
+    const { data: taskRow, error: taskErr } = await supabase
+      .from('study_tasks')
+      .select('id, study_id, status, title')
+      .eq('id', taskId)
+      .eq('study_id', studyId)
+      .maybeSingle()
+
+    if (taskErr || !taskRow || taskRow.status !== 'open') {
+      return { error: 'This task is not available to fulfill with a new record.' }
+    }
+    const { data: assignee } = await supabase
+      .from('study_task_assignees')
+      .select('user_id')
+      .eq('task_id', taskId)
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (!assignee) {
+      return { error: 'You are not assigned to this task.' }
+    }
+  }
 
   if (!recordNumber?.trim()) {
     return { error: 'Record number is required' }
@@ -79,7 +110,38 @@ export async function createRecord(studyId: string, formData: FormData) {
     return { error: error.message }
   }
 
+  if (taskId) {
+    const { error: rpcError } = await supabase.rpc('complete_study_task_after_record', {
+      p_task_id: taskId,
+      p_record_id: record.id,
+    })
+    if (rpcError) {
+      revalidatePath(`/studies/${studyId}`)
+      revalidatePath('/dashboard')
+      return {
+        error: `Record was created, but the task could not be marked complete: ${rpcError.message}. You can try again from the study page or contact a study lead.`,
+        recordId: record.id,
+      }
+    }
+    const stateHash = await generateHash({
+      study_id: studyId,
+      task_id: taskId,
+      record_id: record.id,
+    })
+    await createAuditEvent(
+      studyId,
+      userId,
+      'study_task_completed',
+      'study_task',
+      taskId,
+      null,
+      stateHash,
+      { fulfilled_record_id: record.id }
+    )
+  }
+
   revalidatePath(`/studies/${studyId}`)
+  revalidatePath('/dashboard')
   redirect(`/studies/${studyId}/records/${record.id}?created=1`)
 }
 

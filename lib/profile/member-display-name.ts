@@ -14,6 +14,25 @@ export type MemberDisplayFallbacks = {
   userId?: string | null
 }
 
+/** Supabase Auth user_metadata / OAuth-style keys for list labels before profiles sync. */
+export function memberDisplayHintsFromAuthMetadata(
+  meta: Record<string, unknown> | null | undefined
+): MemberDisplayProfileInput {
+  if (!meta) return {}
+  const str = (k: string) => {
+    const v = meta[k]
+    return typeof v === 'string' ? v.trim() : ''
+  }
+  const first = str('first_name') || str('given_name')
+  const last = str('last_name') || str('family_name')
+  const full = str('full_name') || str('name')
+  return {
+    first_name: first || undefined,
+    last_name: last || undefined,
+    display_name: !first && !last && full ? full : undefined,
+  }
+}
+
 export function formatMemberListName(
   p: MemberDisplayProfileInput,
   fallbacks?: MemberDisplayFallbacks

@@ -48,6 +48,7 @@ function AuthCallbackContent() {
             return
           }
           await fetch('/api/auth/sync-profile-metadata', { method: 'POST', credentials: 'same-origin' })
+          await fetch('/api/auth/sync-orcid-from-session', { method: 'POST', credentials: 'same-origin' })
           go(next)
           return
         }
@@ -92,6 +93,7 @@ function AuthCallbackContent() {
         }
 
         await fetch('/api/auth/sync-profile-metadata', { method: 'POST', credentials: 'same-origin' })
+        await fetch('/api/auth/sync-orcid-from-session', { method: 'POST', credentials: 'same-origin' })
         go(next)
       } catch {
         go('/auth/auth-code-error')

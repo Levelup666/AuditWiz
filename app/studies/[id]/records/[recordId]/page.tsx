@@ -86,7 +86,7 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
           last_name: creatorProfile.last_name,
           display_name: creatorProfile.display_name,
         },
-        { userId: record.created_by }
+        undefined
       )
     : 'Unknown'
 
@@ -98,7 +98,7 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
           last_name: lastEditorProfile.last_name,
           display_name: lastEditorProfile.display_name,
         },
-        { userId: record.last_edited_by! }
+        undefined
       )
     : null
 

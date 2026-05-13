@@ -71,7 +71,9 @@ export default async function InvitesPage() {
               Finish account setup
             </CardTitle>
             <CardDescription className="text-amber-900/80 dark:text-amber-200/90">
-              Set your password and notification preferences so your account is ready.
+              Set your password, legal name, and notification preferences. After that, use the
+              buttons below to open each invite and accept it—you cannot join until setup is
+              complete.
             </CardDescription>
           </CardHeader>
           <CardContent>

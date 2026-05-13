@@ -14,11 +14,13 @@ import {
   Menu,
   ChevronLeft,
   Building2,
+  ShieldCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useNavContext } from './nav-provider'
+import { useNavContext, type OrcidSessionIdentity } from './nav-provider'
 import InvitesNavLink from './invites-nav-link'
 import { isNavActive } from './is-nav-active'
+import OrcidBadge from '@/components/profile/orcid-badge'
 
 const baseNavigation = [
   { name: 'Studies', href: '/studies', icon: FolderOpen },
@@ -33,9 +35,16 @@ const logsNavItem = {
   icon: Activity,
 } as const
 
+const auditorNavItem = {
+  name: 'Auditor',
+  href: '/auditor',
+  icon: ShieldCheck,
+} as const
+
 type NavItem =
   | (typeof baseNavigation)[number]
   | typeof logsNavItem
+  | typeof auditorNavItem
 
 function FloatingNavItem({
   item,
@@ -95,11 +104,20 @@ export default function FloatingNav() {
   const pathname = usePathname()
   const router = useRouter()
   const ctx = useNavContext()
-  const { isOpen, setIsOpen, isAuthenticated, canViewLogs } = ctx ?? {
+  const {
+    isOpen,
+    setIsOpen,
+    isAuthenticated,
+    canViewLogs,
+    hasActiveAuditorEngagement,
+    orcidIdentity,
+  } = ctx ?? {
     isOpen: false,
     setIsOpen: () => {},
     isAuthenticated: false,
     canViewLogs: false,
+    hasActiveAuditorEngagement: false,
+    orcidIdentity: null as OrcidSessionIdentity | null,
   }
 
   if (!isAuthenticated) {
@@ -113,6 +131,7 @@ export default function FloatingNav() {
   const navigation: NavItem[] = [
     ...baseNavigation.slice(0, 3),
     ...(canViewLogs ? [logsNavItem] : []),
+    ...(hasActiveAuditorEngagement ? [auditorNavItem] : []),
     baseNavigation[3],
   ]
 
@@ -164,6 +183,7 @@ export default function FloatingNav() {
               ))}
               <InvitesNavLink isOpen onNavigate={() => setIsOpen(false)} />
             </div>
+            <OrcidNavBadge identity={orcidIdentity} collapsed={false} />
             <div className="border-t border-gray-800 p-4">
               <Button
                 onClick={handleSignOut}
@@ -192,7 +212,8 @@ export default function FloatingNav() {
               collapsed
               onNavigate={() => setIsOpen(false)}
             />
-            <div className="mt-auto border-t border-gray-800 p-2">
+            <div className="mt-auto flex flex-col items-center gap-2 border-t border-gray-800 p-2">
+              <OrcidNavBadge identity={orcidIdentity} collapsed />
               <Button
                 onClick={handleSignOut}
                 variant="ghost"
@@ -206,5 +227,45 @@ export default function FloatingNav() {
           </div>
         )}
       </nav>
+  )
+}
+
+function OrcidNavBadge({
+  identity,
+  collapsed,
+}: {
+  identity: OrcidSessionIdentity | null
+  collapsed: boolean
+}) {
+  if (!identity?.verified || !identity.orcidId) return null
+
+  if (collapsed) {
+    return (
+      <div
+        className="flex items-center justify-center"
+        title={`Signed in with ORCID ${identity.orcidId}`}
+      >
+        <OrcidBadge orcidId={identity.orcidId} verified />
+      </div>
+    )
+  }
+
+  return (
+    <div className="border-t border-gray-800 px-4 py-3">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+        {identity.signedInViaOrcid ? 'Signed in with ORCID' : 'Verified ORCID'}
+      </div>
+      <div className="mt-1 flex items-center gap-2">
+        <OrcidBadge orcidId={identity.orcidId} verified />
+        <Link
+          href={`https://orcid.org/${identity.orcidId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-mono text-xs text-gray-300 hover:text-white hover:underline"
+        >
+          {identity.orcidId}
+        </Link>
+      </div>
+    </div>
   )
 }

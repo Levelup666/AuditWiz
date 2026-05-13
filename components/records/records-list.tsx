@@ -96,7 +96,7 @@ export default async function RecordsList({
           last_name: p.last_name,
           display_name: p.display_name,
         },
-        { userId: p.id }
+        undefined
       ),
     ])
   )

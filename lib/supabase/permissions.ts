@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from './server'
 import type { StudyRole } from '@/lib/types'
 import type { StudyRoleDefinitionRow } from '@/lib/supabase/study-roles'
+import { getEngagementStudyIdsForUser } from '@/lib/auditor/engagements'
 
 /**
  * Load role definitions for a user's active assignments without PostgREST embeds.
@@ -202,7 +203,13 @@ export async function getStudyIdsWhereUserCanAudit(
     .eq('user_id', userId)
     .is('revoked_at', null)
 
-  if (assignErr || !assigns?.length) return []
+  // Engagement studies (institution_wide expanded) are always unioned in, even if the
+  // user has no study-level audit role assignments.
+  const engagementStudyIds = await getEngagementStudyIdsForUser(userId)
+
+  if (assignErr || !assigns?.length) {
+    return [...new Set(engagementStudyIds)]
+  }
 
   const defIds = [
     ...new Set(
@@ -211,24 +218,30 @@ export async function getStudyIdsWhereUserCanAudit(
         .filter((id): id is string => typeof id === 'string' && id.length > 0)
     ),
   ]
-  if (defIds.length === 0) return []
+
+  if (defIds.length === 0) {
+    return [...new Set(engagementStudyIds)]
+  }
 
   const { data: defs, error: defErr } = await supabase
     .from('study_role_definitions')
     .select('id, study_id, can_access_audit_hub')
     .in('id', defIds)
 
-  if (defErr || !defs?.length) return []
+  if (defErr || !defs?.length) {
+    return [...new Set(engagementStudyIds)]
+  }
 
   const auditCapable = new Set(
     defs.filter((d) => d.can_access_audit_hub).map((d) => d.id as string)
   )
-  if (auditCapable.size === 0) return []
 
-  const studyIds: string[] = []
-  for (const a of assigns) {
-    if (a.role_definition_id && auditCapable.has(a.role_definition_id)) {
-      studyIds.push(a.study_id as string)
+  const studyIds: string[] = [...engagementStudyIds]
+  if (auditCapable.size > 0) {
+    for (const a of assigns) {
+      if (a.role_definition_id && auditCapable.has(a.role_definition_id)) {
+        studyIds.push(a.study_id as string)
+      }
     }
   }
   return [...new Set(studyIds)]

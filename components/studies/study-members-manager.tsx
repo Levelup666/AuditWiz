@@ -89,9 +89,10 @@ function studyRevokeDisabled(
 
 function candidateLabel(c: InstitutionCandidate): string {
   const label = c.member_display_name?.trim() || c.display_name?.trim()
-  if (label && c.email) return `${label} · ${c.email}`
+  const email = c.email === 'Email unavailable' ? '' : c.email
+  if (label && email) return `${label} · ${email}`
   if (label) return label
-  return c.email || c.user_id.slice(0, 8) + '…'
+  return email || 'Unknown member'
 }
 
 function toastStudyInviteEmail(

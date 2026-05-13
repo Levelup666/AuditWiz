@@ -8,6 +8,7 @@ import { Plus, Settings } from 'lucide-react'
 import { canCreateRecord, canManageStudyMembers } from '@/lib/supabase/permissions'
 import { Badge } from '@/components/ui/badge'
 import StudyDocumentationCard from '@/components/studies/study-documentation-card'
+import StudyTasksSection from '@/components/studies/study-tasks-section'
 import StudyAuditTrail from '@/components/studies/study-audit-trail'
 import { StudyContextHints } from '@/components/studies/study-scope-provider'
 
@@ -39,7 +40,6 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
     notFound()
   }
 
-  // Check permissions
   const canCreate = await canCreateRecord(user.id, id)
 
   const canManageMembers = await canManageStudyMembers(user.id, id)
@@ -91,6 +91,14 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
         studyId={id}
         documentation={study.documentation ?? null}
         canEdit={canCreate && studyIsActive}
+      />
+
+      <StudyTasksSection
+        studyId={id}
+        userId={user.id}
+        canManageMembers={canManageMembers}
+        canCreateRecords={canCreate}
+        studyIsActive={studyIsActive}
       />
 
       <div className="flex items-center justify-between">

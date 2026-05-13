@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/lib/toast'
 import { Input } from '@/components/ui/input'
@@ -14,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
 import { INSTITUTION_REVOKE } from '@/lib/supabase/member-revocation'
 
@@ -25,6 +26,16 @@ interface Member {
   granted_by: string | null
   email: string
   member_display_name?: string
+}
+
+interface PendingInvite {
+  id: string
+  email: string
+  role: string
+  invited_at: string
+  expires_at: string
+  last_sent_at: string | null
+  resend_count: number | null
 }
 
 interface InstitutionMembersManagerProps {
@@ -50,34 +61,75 @@ function institutionRemoveDisabled(
   return { disabled: false }
 }
 
+type RemovalImpactStudy = { study_id: string; study_title: string; roles: string[] }
+
+type RemovalImpactPayload = {
+  applies: boolean
+  studies: RemovalImpactStudy[]
+  openTaskAssigneeCount: number
+}
+
+function scrollToPendingInvites() {
+  const el = document.getElementById('pending-invites-section')
+  el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 export default function InstitutionMembersManager({
   institutionId,
   currentUserId,
 }: InstitutionMembersManagerProps) {
   const [members, setMembers] = useState<Member[]>([])
-  const [loading, setLoading] = useState(true)
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([])
+  const [membersLoading, setMembersLoading] = useState(true)
+  const [invitesLoading, setInvitesLoading] = useState(true)
+  const [allowExternalCollaborators, setAllowExternalCollaborators] = useState(true)
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<'admin' | 'member'>('member')
   const [addLoading, setAddLoading] = useState(false)
-  const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [revokingMemberId, setRevokingMemberId] = useState<string | null>(null)
+  const [updatingRoleMemberId, setUpdatingRoleMemberId] = useState<string | null>(null)
+  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
+  const [revokingInviteId, setRevokingInviteId] = useState<string | null>(null)
 
-  const fetchMembers = async () => {
-    setLoading(true)
+  const fetchMembers = useCallback(async () => {
+    setMembersLoading(true)
     try {
       const res = await fetch(`/api/institutions/${institutionId}/members`)
-      if (!res.ok) throw new Error(await res.json().then((b) => b.error || res.statusText))
       const data = await res.json()
-      setMembers(data)
+      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : res.statusText)
+      const list = Array.isArray(data) ? data : (data.members ?? [])
+      setMembers(list)
+      if (!Array.isArray(data) && typeof data.allow_external_collaborators === 'boolean') {
+        setAllowExternalCollaborators(data.allow_external_collaborators)
+      }
     } catch (e) {
       toast.error('Load failed', e instanceof Error ? e.message : 'Failed to load members')
     } finally {
-      setLoading(false)
+      setMembersLoading(false)
     }
-  }
+  }, [institutionId])
+
+  const fetchPendingInvites = useCallback(async () => {
+    setInvitesLoading(true)
+    try {
+      const res = await fetch(`/api/institutions/${institutionId}/invites`)
+      const data = (await res.json()) as { invites?: PendingInvite[]; error?: string }
+      if (!res.ok) throw new Error(data.error || res.statusText)
+      setPendingInvites(Array.isArray(data.invites) ? data.invites : [])
+    } catch (e) {
+      toast.error(
+        'Pending invites',
+        e instanceof Error ? e.message : 'Failed to load pending invites'
+      )
+    } finally {
+      setInvitesLoading(false)
+    }
+  }, [institutionId])
 
   useEffect(() => {
-    fetchMembers()
-  }, [institutionId])
+    void fetchMembers()
+    void fetchPendingInvites()
+  }, [fetchMembers, fetchPendingInvites])
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -90,7 +142,24 @@ export default function InstitutionMembersManager({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: emailTrim, role }),
       })
-      const data = await res.json()
+      const data = (await res.json()) as {
+        error?: string
+        code?: string
+        invite_id?: string
+        email_dispatched?: boolean
+        email_channel?: string
+        email_dispatch_message?: string
+        email_supabase_error?: { code?: string; message?: string }
+      }
+      if (res.status === 409 && data.code === 'duplicate_pending_invite') {
+        toast.warning(
+          'Already invited',
+          'An invite is already pending for this email. Use Resend or Revoke in Pending invites below.'
+        )
+        scrollToPendingInvites()
+        await fetchPendingInvites()
+        return
+      }
       if (!res.ok) throw new Error(data.error || res.statusText)
       setEmail('')
       setRole('member')
@@ -98,7 +167,7 @@ export default function InstitutionMembersManager({
         toast.success(
           'Invite sent',
           data.email_channel === 'supabase'
-            ? 'They should get an email from your Supabase Auth mailer (like sign-up confirmation), then can accept under Invites.'
+            ? 'They should get an email from your Supabase Auth mailer. They will complete account setup first, then accept under Invites.'
             : data.email_dispatch_message ??
                 'The recipient should receive an email shortly.'
         )
@@ -121,7 +190,8 @@ export default function InstitutionMembersManager({
             msgHint
         )
       }
-      fetchMembers()
+      await fetchMembers()
+      await fetchPendingInvites()
     } catch (e) {
       toast.error('Invite failed', e instanceof Error ? e.message : 'Failed to send invite')
     } finally {
@@ -129,35 +199,169 @@ export default function InstitutionMembersManager({
     }
   }
 
-  const handleRevoke = async (memberId: string) => {
-    setRevokingId(memberId)
+  const handleResendInvite = async (inv: PendingInvite) => {
+    setResendingInviteId(inv.id)
     try {
-      const res = await fetch(`/api/institutions/${institutionId}/members`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId, revoked: true }),
-      })
-      const data = await res.json()
+      const res = await fetch(
+        `/api/institutions/${institutionId}/invites/${inv.id}/resend`,
+        { method: 'POST' }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || res.statusText)
+      toast.success('Invite resent', 'A fresh link was emailed (when mail is configured).')
+      await fetchPendingInvites()
+    } catch (e) {
+      toast.error('Resend failed', e instanceof Error ? e.message : 'Failed to resend')
+    } finally {
+      setResendingInviteId(null)
+    }
+  }
+
+  const handleRevokeInvite = async (inv: PendingInvite) => {
+    if (
+      !window.confirm(
+        `Revoke the pending invite to ${inv.email}? They will not be able to accept it unless you send a new invite.`
+      )
+    ) {
+      return
+    }
+    setRevokingInviteId(inv.id)
+    try {
+      const res = await fetch(
+        `/api/institutions/${institutionId}/invites/${inv.id}/revoke`,
+        { method: 'POST' }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || res.statusText)
+      toast.success('Invite revoked')
+      await fetchPendingInvites()
+    } catch (e) {
+      toast.error('Revoke failed', e instanceof Error ? e.message : 'Failed to revoke invite')
+    } finally {
+      setRevokingInviteId(null)
+    }
+  }
+
+  const handleRemoveMember = async (m: Member) => {
+    setRevokingMemberId(m.id)
+    try {
+      const patch = async (confirmStudyAccessRevocation: boolean) => {
+        const res = await fetch(`/api/institutions/${institutionId}/members`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ memberId: m.id, revoked: true, confirmStudyAccessRevocation }),
+        })
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string
+          code?: string
+          impact?: RemovalImpactPayload
+        }
+        return { res, data }
+      }
+
+      let { res, data } = await patch(false)
+
+      if (
+        res.status === 409 &&
+        data?.code === 'study_access_revocation_required' &&
+        data.impact?.applies
+      ) {
+        const imp = data.impact
+        const studyLines =
+          imp.studies.length > 0
+            ? imp.studies.map((s) => `• ${s.study_title} (${s.roles.join(', ')})`).join('\n')
+            : '• (no matching study rows; access may still be revoked if policies change)'
+        const taskLine =
+          imp.openTaskAssigneeCount > 0
+            ? `\n\nThey will be unassigned from ${imp.openTaskAssigneeCount} open task(s) under those studies.`
+            : ''
+        const label = m.member_display_name?.trim() || m.email
+        const confirmed = window.confirm(
+          [
+            `${label} is on one or more draft or active studies under this institution.`,
+            'This institution only allows institution members on studies—removing them from the institution will revoke their study access completely.',
+            '',
+            'Studies:',
+            studyLines,
+            taskLine,
+            '',
+            'Records, signatures, and audit history they appear in are not deleted.',
+            '',
+            'Remove from the institution and revoke study access?',
+          ].join('\n')
+        )
+        if (!confirmed) {
+          return
+        }
+        ;({ res, data } = await patch(true))
+      }
+
       if (!res.ok) throw new Error(data.error || res.statusText)
       toast.success('Member removed')
-      fetchMembers()
+      await fetchMembers()
     } catch (e) {
       toast.error(
         'Revoke failed',
         e instanceof Error ? e.message : 'Failed to remove member'
       )
     } finally {
-      setRevokingId(null)
+      setRevokingMemberId(null)
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading members…
-      </div>
-    )
+  const handleChangeRole = async (m: Member, nextRole: 'admin' | 'member') => {
+    if (m.role === nextRole) return
+    const admins = members.filter((x) => x.role === 'admin')
+    if (m.user_id === currentUserId) {
+      toast.error('Role change blocked', INSTITUTION_REVOKE.self)
+      return
+    }
+    if (m.role === 'admin' && nextRole === 'member') {
+      if (admins.length <= 1) {
+        toast.error('Role change blocked', INSTITUTION_REVOKE.lastAdmin)
+        return
+      }
+      if (admins.length === 2) {
+        const remainingAdmin = admins.find((x) => x.user_id !== m.user_id)
+        const remainingLabel = remainingAdmin?.member_display_name?.trim() || remainingAdmin?.email
+        const targetLabel = m.member_display_name?.trim() || m.email
+        const confirmed = window.confirm(
+          [
+            `Demote ${targetLabel} from admin to member?`,
+            '',
+            `${remainingLabel ?? 'Another member'} will become the only admin for this institution.`,
+            'You can promote another admin after this change.',
+          ].join('\n')
+        )
+        if (!confirmed) return
+      }
+    }
+
+    setUpdatingRoleMemberId(m.id)
+    try {
+      const res = await fetch(`/api/institutions/${institutionId}/members`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId: m.id, role: nextRole }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || res.statusText)
+      toast.success('Role updated')
+      await fetchMembers()
+    } catch (e) {
+      toast.error(
+        'Role update failed',
+        e instanceof Error ? e.message : 'Failed to update member role'
+      )
+    } finally {
+      setUpdatingRoleMemberId(null)
+    }
+  }
+
+  const inviteStatusLabel = (inv: PendingInvite) => {
+    const n = inv.resend_count ?? 0
+    if (n <= 0) return 'Sent'
+    return `Resent ${n}×`
   }
 
   return (
@@ -191,50 +395,166 @@ export default function InstitutionMembersManager({
         </Button>
       </form>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Email</TableHead>
-            <TableHead>Role</TableHead>
-            <TableHead>Added</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {members.map((m) => {
-            const remove = institutionRemoveDisabled(m, members, currentUserId)
-            return (
-              <TableRow key={m.id}>
-                <TableCell className="font-medium">
-                  {m.member_display_name ?? m.email}
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">{m.email}</TableCell>
-                <TableCell>
-                  <Badge variant="outline">{m.role}</Badge>
-                </TableCell>
-                <TableCell className="text-sm text-gray-500">
-                  {new Date(m.granted_at).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleRevoke(m.id)}
-                    disabled={remove.disabled || revokingId === m.id}
-                    title={remove.title}
-                  >
-                    {revokingId === m.id ? 'Removing…' : 'Remove'}
-                  </Button>
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
-      {members.length === 0 && (
-        <p className="text-gray-500">No members yet. Invite someone above.</p>
+      {!allowExternalCollaborators && (
+        <p className="text-sm text-muted-foreground max-w-3xl leading-relaxed">
+          This institution only allows <strong>institution members</strong> on studies. Removing someone from the
+          institution also revokes their access to draft and active studies under this institution and removes them
+          from open tasks they were assigned. Completed work and audit entries are preserved.
+        </p>
       )}
+
+      <Card id="pending-invites-section">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg">Pending invites</CardTitle>
+          <CardDescription>
+            Open invitations that have not been accepted yet. Avoid sending a duplicate invite for the same
+            email—use <strong>Resend</strong> to rotate the link and extend the expiry, or <strong>Revoke</strong> to
+            cancel.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {invitesLoading ? (
+            <div className="flex items-center gap-2 text-muted-foreground text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading pending invites…
+            </div>
+          ) : pendingInvites.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No pending invites for this institution.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Sent</TableHead>
+                  <TableHead>Expires</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pendingInvites.map((inv) => (
+                  <TableRow key={inv.id}>
+                    <TableCell className="font-medium">{inv.email}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{inv.role}</Badge>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {new Date(inv.last_sent_at ?? inv.invited_at).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {new Date(inv.expires_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-sm">{inviteStatusLabel(inv)}</TableCell>
+                    <TableCell className="text-right space-x-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={resendingInviteId === inv.id || revokingInviteId === inv.id}
+                        onClick={() => handleResendInvite(inv)}
+                      >
+                        {resendingInviteId === inv.id ? 'Sending…' : 'Resend'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={resendingInviteId === inv.id || revokingInviteId === inv.id}
+                        onClick={() => handleRevokeInvite(inv)}
+                      >
+                        {revokingInviteId === inv.id ? 'Revoking…' : 'Revoke'}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <div>
+        <h2 className="text-lg font-semibold mb-2">Members</h2>
+        {membersLoading ? (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading members…
+          </div>
+        ) : (
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Added</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {members.map((m) => {
+                  const remove = institutionRemoveDisabled(m, members, currentUserId)
+                  return (
+                    <TableRow key={m.id}>
+                      <TableCell className="font-medium">
+                        {m.member_display_name ?? m.email}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{m.email}</TableCell>
+                      <TableCell>
+                        <select
+                          value={m.role}
+                          onChange={(e) => {
+                            const nextRole = e.target.value as 'admin' | 'member'
+                            void handleChangeRole(m, nextRole)
+                          }}
+                          disabled={
+                            updatingRoleMemberId === m.id ||
+                            revokingMemberId === m.id ||
+                            m.user_id === currentUserId ||
+                            (m.role === 'admin' &&
+                              members.filter((x) => x.role === 'admin').length <= 1)
+                          }
+                          title={
+                            m.user_id === currentUserId
+                              ? INSTITUTION_REVOKE.self
+                              : m.role === 'admin' &&
+                                  members.filter((x) => x.role === 'admin').length <= 1
+                                ? INSTITUTION_REVOKE.lastAdmin
+                                : undefined
+                          }
+                          className="block w-[120px] rounded-md border border-input bg-background px-2 py-1 text-sm"
+                        >
+                          <option value="member">Member</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      </TableCell>
+                      <TableCell className="text-sm text-gray-500">
+                        {new Date(m.granted_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRemoveMember(m)}
+                          disabled={remove.disabled || revokingMemberId === m.id}
+                          title={remove.title}
+                        >
+                          {revokingMemberId === m.id ? 'Removing…' : 'Remove'}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+            {members.length === 0 && (
+              <p className="text-gray-500 mt-2">No members yet. Invite someone above.</p>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }

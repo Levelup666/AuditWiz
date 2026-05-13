@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 import { toast } from '@/lib/toast'
 import { upsertProfileNamesAfterSignup } from '@/app/auth/actions'
+import { OrcidOAuthButton } from '@/components/auth/orcid-oauth-button'
 
 export default function SignUpForm({
   initialEmail = '',
@@ -97,7 +98,8 @@ export default function SignUpForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-8 space-y-6">
+    <>
+      <form onSubmit={handleSubmit} className="mt-8 space-y-6">
       <div className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
@@ -181,6 +183,28 @@ export default function SignUpForm({
           Sign in
         </Link>
       </div>
-    </form>
+      </form>
+
+      <div className="relative mt-8">
+        <div className="absolute inset-0 flex items-center" aria-hidden="true">
+          <div className="w-full border-t border-gray-200" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-gray-50 px-2 text-gray-500">Or</span>
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <OrcidOAuthButton
+          mode="signup"
+          nextPath={redirectedFrom}
+          className="w-full"
+          label="Sign up with ORCID"
+        />
+        <p className="mt-2 text-center text-xs text-gray-500">
+          Creates your account after ORCID sign-in. Configure ORCID as a custom OIDC provider in Supabase.
+        </p>
+      </div>
+    </>
   )
 }

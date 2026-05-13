@@ -6,15 +6,18 @@ import { Button } from '@/components/ui/button'
 import { safeAppPath } from '@/lib/invites/safe-redirect'
 
 interface AccountSetupPageProps {
-  searchParams: Promise<{ next?: string; invite?: string }>
+  searchParams: Promise<{ next?: string; invite?: string; pending_invite?: string }>
 }
 
 export default async function AccountSetupPage({ searchParams }: AccountSetupPageProps) {
-  const { next: nextParam, invite: inviteParam } = await searchParams
+  const { next: nextParam, invite: inviteParam, pending_invite: pendingInviteParam } =
+    await searchParams
   const nextPath = safeAppPath(nextParam ?? null, '/invites')
   const inviteToken = inviteParam?.trim() || ''
+  const pendingInviteFlow =
+    pendingInviteParam === '1' || pendingInviteParam?.toLowerCase() === 'true'
   const inviteDriven =
-    Boolean(inviteToken) || nextPath.startsWith('/invite/')
+    Boolean(inviteToken) || nextPath.startsWith('/invite/') || pendingInviteFlow
 
   const supabase = await createClient()
   const {
@@ -45,7 +48,8 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
             <>
               Finish getting started after your invitation: set a password, enter your first and
               last name (and optional nickname), then choose notification preferences. You need a
-              password and legal name on file before you can accept the invite in the app.
+              password and legal name on file before you can accept invites under{' '}
+              <strong>Invites</strong> in the app.
             </>
           ) : (
             <>
@@ -59,6 +63,7 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
       <AccountSetupForm
         nextPath={nextPath}
         inviteToken={inviteToken || undefined}
+        pendingInviteFlow={pendingInviteFlow}
         userEmail={user.email ?? ''}
         initialFirstName={profile?.first_name ?? null}
         initialLastName={profile?.last_name ?? null}

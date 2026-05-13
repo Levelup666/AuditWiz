@@ -66,6 +66,7 @@ export default async function InstitutionsPage() {
           ) : (
             <div className="space-y-3">
               {institutions.map((inst: any) => {
+                const isAdmin = inst.role === 'admin'
                 const rf =
                   inst.metadata &&
                   typeof inst.metadata === 'object' &&
@@ -79,7 +80,14 @@ export default async function InstitutionsPage() {
                   className="flex items-center justify-between rounded-lg border p-4"
                 >
                   <div>
-                    <p className="font-medium">{inst.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{inst.name}</p>
+                      {isAdmin && (
+                        <Badge variant="outline" className="text-[11px]">
+                          Admin
+                        </Badge>
+                      )}
+                    </div>
                     {rfLabel && (
                       <Badge variant="secondary" className="mt-1 font-normal text-xs">
                         {rfLabel}
@@ -90,9 +98,21 @@ export default async function InstitutionsPage() {
                     )}
                     <p className="text-xs text-muted-foreground mt-1">Your role: {inst.role}</p>
                   </div>
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/institutions/${inst.id}`}>View</Link>
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/institutions/${inst.id}`}>{isAdmin ? 'Manage' : 'View'}</Link>
+                    </Button>
+                    {isAdmin && (
+                      <>
+                        <Button asChild variant="ghost" size="sm">
+                          <Link href={`/institutions/${inst.id}/members`}>Members</Link>
+                        </Button>
+                        <Button asChild variant="ghost" size="sm">
+                          <Link href={`/institutions/${inst.id}/settings`}>Settings</Link>
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 )
               })}

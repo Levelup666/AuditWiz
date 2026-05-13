@@ -16,6 +16,13 @@ export async function POST(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const body = await request.json().catch(() => ({}))
+  const { invite_id: inviteIdFromBody } = body as { invite_id?: string }
+  const setupReturnPath = inviteIdFromBody
+    ? `/invites/institution/${inviteIdFromBody}`
+    : '/invites'
+  const accountSetupPath = `/account/setup?next=${encodeURIComponent(setupReturnPath)}&pending_invite=1`
+
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('account_setup_completed_at, first_name, last_name')
@@ -29,7 +36,7 @@ export async function POST(
       {
         error: 'Set a password in account setup before accepting this invitation.',
         requires_account_setup: true,
-        setup_path: '/account/setup?next=/invites',
+        setup_path: accountSetupPath,
       },
       { status: 428 }
     )
@@ -39,14 +46,13 @@ export async function POST(
       {
         error: 'Add your first and last name in account setup before accepting this invitation.',
         requires_account_setup: true,
-        setup_path: '/account/setup?next=/invites',
+        setup_path: accountSetupPath,
       },
       { status: 428 }
     )
   }
 
-  const body = await request.json().catch(() => ({}))
-  const { invite_id: inviteId } = body as { invite_id?: string }
+  const inviteId = inviteIdFromBody
 
   if (!inviteId) {
     return NextResponse.json({ error: 'invite_id is required' }, { status: 400 })

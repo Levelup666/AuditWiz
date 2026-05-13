@@ -5,8 +5,8 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { safeAppPath } from '@/lib/invites/safe-redirect'
 import { formatPendingInviteExpiryForEmail } from '@/lib/invites/pending-invite-expiry'
+import { getJwtRoleFromSecret } from '@/lib/supabase/jwt-role-from-secret'
 
 function appBaseUrl(): string {
   if (process.env.NEXT_PUBLIC_APP_URL) {
@@ -31,6 +31,9 @@ function supabaseInviteFailedUserMessage(
   if (supabaseAuthError?.code === 'over_email_send_rate_limit') {
     return 'No email was sent: Supabase Auth is rate-limiting outbound email for this project (common after many invites or tests in a short window). Wait and retry, or configure custom SMTP in the Dashboard. Set RESEND_API_KEY to deliver via Resend instead. The invite is saved—share the link from your records if needed.'
   }
+  if (supabaseAuthError?.code === 'not_admin') {
+    return 'No email was sent: this is not your institution or study role. Supabase Auth rejected the server invite call (Auth code not_admin). Usually SUPABASE_SERVICE_ROLE_KEY is set to the anon publishable key by mistake—use the service_role secret from Supabase Dashboard → Project Settings → API. Or set RESEND_API_KEY so this app sends the same invite link via Resend. The invite is saved—share the link from your records if needed.'
+  }
   const smtpHint =
     'If you use custom SMTP: open Supabase Dashboard → Project Settings → Auth → SMTP Settings, send a test email, and confirm the sender address/domain matches what your provider allows (SPF/DKIM), TLS mode matches the port (often 587 STARTTLS or 465 SSL), and credentials are correct.'
   return `No email was sent: Supabase Auth could not deliver the invite email (${smtpHint}). Also confirm Authentication → URL Configuration allows your app redirect URLs (e.g. …/auth/callback). Set RESEND_API_KEY in this app to fall back to Resend with the same invite link text. The invite is saved—share the link from your records if needed.`
@@ -49,6 +52,7 @@ export type PendingInviteEmailResult = {
     | 'supabase_said_user_exists'
     | 'supabase_invite_failed'
     | 'supabase_admin_not_provided'
+    | 'supabase_service_role_misconfigured'
     | 'existing_user_notify_no_resend'
   /** Last Auth admin error when inviteUserByEmail did not succeed (safe to surface; no PII). */
   supabaseAuthError?: { code?: string; status?: number; message?: string }
@@ -79,9 +83,11 @@ export function inviteEmailDispatchFields(emailResult: PendingInviteEmailResult)
         ? 'No email was sent: existing users are notified via Resend only for this flow. Set RESEND_API_KEY. The pending invite is saved—they can still accept from Invites when signed in.'
         : emailResult.noResendDetail === 'supabase_said_user_exists'
           ? 'No email was sent: this address already has an Auth user. Set RESEND_API_KEY to deliver a copy, or ask them to sign in and open Invites. The invite is saved.'
-          : emailResult.noResendDetail === 'supabase_invite_failed'
-            ? supabaseInviteFailedUserMessage(emailResult.supabaseAuthError)
-            : 'No email was sent: Resend is not configured (set RESEND_API_KEY). The invite is saved.'
+          : emailResult.noResendDetail === 'supabase_service_role_misconfigured'
+            ? 'No email was sent: the server’s SUPABASE_SERVICE_ROLE_KEY is not the service_role JWT (often the anon key was pasted by mistake). Fix it in Dashboard → Project Settings → API, or set RESEND_API_KEY to email the invite link. The invite is saved.'
+            : emailResult.noResendDetail === 'supabase_invite_failed'
+              ? supabaseInviteFailedUserMessage(emailResult.supabaseAuthError)
+              : 'No email was sent: Resend is not configured (set RESEND_API_KEY). The invite is saved.'
       : 'The invite is saved, but Resend rejected the message. Check server logs and RESEND_FROM_EMAIL / domain verification.'
 
   return {
@@ -123,14 +129,12 @@ export async function sendPendingInviteEmail(params: {
   const base = appBaseUrl()
   const invitePath = inviteRawToken ? `/invite/${inviteRawToken}` : null
   const inviteUrl = invitePath ? `${base}${invitePath}` : `${base}/invites`
-  const callbackNext = invitePath
-    ? `/auth/callback?next=${encodeURIComponent(invitePath)}`
-    : `/auth/callback?next=${encodeURIComponent('/account/setup?next=/invites')}`
+  /** New invitees must finish credentials before accepting; magic link lands here first. */
+  const setupFirstPath = '/account/setup?next=/invites&pending_invite=1'
+  const callbackNext = `/auth/callback?next=${encodeURIComponent(setupFirstPath)}`
   const redirectTo = `${base}${callbackNext.startsWith('/') ? callbackNext : '/' + callbackNext}`
 
-  const setupUrl = invitePath
-    ? `${base}/account/setup?next=${encodeURIComponent(invitePath)}&invite=${encodeURIComponent(inviteRawToken!)}`
-    : `${base}/account/setup?next=${encodeURIComponent(safeAppPath('/invites'))}`
+  const setupUrl = `${base}${setupFirstPath}`
 
   const invitesUrl = `${base}/invites`
   const subject =
@@ -144,14 +148,14 @@ export async function sendPendingInviteEmail(params: {
   const text = invitePath
     ? `You have a pending ${kind} invitation on AuditWiz (${contextLabel}).
 
-Open this link to review and accept the invitation (sign in or create an account if needed):
-${inviteUrl}
+Step 1 — Sign in or create your account, then complete account setup (password, legal name, preferences). Use this link right after you open the sign-in link from your email:
+${setupUrl}
 
-After you can sign in, you can also use Invites in the app:
+Step 2 — When setup is finished, open Invites in the app and accept your invitation there:
 ${invitesUrl}
 
-First-time setup (password and preferences) if you were just invited:
-${setupUrl}${expiryNote}`
+Optional — You can also open this invite summary link while signed in (you will be sent to account setup first if you still need credentials):
+${inviteUrl}${expiryNote}`
     : `You have a pending ${kind} invitation on AuditWiz (${contextLabel}).
 
 After signing in, finish account setup (password and notification preferences), then open Invites:
@@ -163,7 +167,6 @@ ${invitesUrl}${expiryNote}`
   let noResendDetail: NonNullable<PendingInviteEmailResult['noResendDetail']> =
     'supabase_admin_not_provided'
   let supabaseAuthError: PendingInviteEmailResult['supabaseAuthError']
-
   function authErr(e: { code?: string; status?: number; message?: string }) {
     const rawMsg = typeof e.message === 'string' ? e.message : undefined
     return {
@@ -173,7 +176,17 @@ ${invitesUrl}${expiryNote}`
     }
   }
 
+  const jwtRole = getJwtRoleFromSecret(process.env.SUPABASE_SERVICE_ROLE_KEY)
+
   if (supabaseAdmin) {
+    if (jwtRole && jwtRole !== 'service_role') {
+      noResendDetail = 'supabase_service_role_misconfigured'
+      supabaseAuthError = {
+        code: 'misconfigured_service_role_key',
+        message:
+          'SUPABASE_SERVICE_ROLE_KEY must be the service_role secret from Supabase Dashboard (API settings), not the anon publishable key.',
+      }
+    } else {
     const minimalRedirect = `${base}/auth/callback`
     const tryInvite = async (rt: string) =>
       supabaseAdmin.auth.admin.inviteUserByEmail(to, { redirectTo: rt })
@@ -235,6 +248,7 @@ ${invitesUrl}${expiryNote}`
         (firstErr as { message?: string }).message,
         (firstErr as { code?: string }).code
       )
+    }
     }
   }
 

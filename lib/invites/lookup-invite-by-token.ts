@@ -30,6 +30,23 @@ export type ResolvedInvite =
       institutionName: string | null
       inviterDisplay: string | null
     }
+  | {
+      kind: 'audit_engagement'
+      inviteId: string
+      institutionId: string
+      role: 'auditor'
+      email: string | null
+      expiresAt: string
+      acceptedAt: string | null
+      revokedAt: string | null
+      invitedBy: string
+      tokenHash: string
+      institutionName: string | null
+      inviterDisplay: string | null
+      scope: 'institution_wide' | 'specific_studies'
+      startsAt: string
+      purpose: string | null
+    }
 
 export async function lookupInviteByTokenHash(
   admin: SupabaseClient,
@@ -104,34 +121,89 @@ export async function lookupInviteByTokenHash(
     .eq('token_hash', tokenHash)
     .maybeSingle()
 
-  if (!instInvite) return null
+  if (instInvite) {
+    const rawInst = instInvite.institution as
+      | { id: string; name: string }
+      | { id: string; name: string }[]
+      | null
+    const institution = Array.isArray(rawInst) ? rawInst[0] ?? null : rawInst
+    let inviterDisplay: string | null = null
+    try {
+      const { data: inv } = await admin.auth.admin.getUserById(instInvite.invited_by)
+      inviterDisplay = inv.user?.email ?? null
+    } catch {
+      inviterDisplay = null
+    }
 
-  const rawInst = instInvite.institution as
+    return {
+      kind: 'institution',
+      inviteId: instInvite.id,
+      institutionId: instInvite.institution_id,
+      role: instInvite.role,
+      email: instInvite.email,
+      expiresAt: instInvite.expires_at,
+      acceptedAt: instInvite.accepted_at,
+      revokedAt: instInvite.revoked_at,
+      invitedBy: instInvite.invited_by,
+      tokenHash: instInvite.token_hash,
+      institutionName: institution?.name ?? null,
+      inviterDisplay,
+    }
+  }
+
+  const { data: engagement } = await admin
+    .from('audit_engagements')
+    .select(
+      `
+      id,
+      institution_id,
+      auditor_email,
+      starts_at,
+      expires_at,
+      accepted_at,
+      revoked_at,
+      granted_by,
+      token_hash,
+      scope,
+      purpose,
+      institution:institutions(id, name)
+    `
+    )
+    .eq('token_hash', tokenHash)
+    .maybeSingle()
+
+  if (!engagement) return null
+
+  const rawEngInst = engagement.institution as
     | { id: string; name: string }
     | { id: string; name: string }[]
     | null
-  const institution = Array.isArray(rawInst) ? rawInst[0] ?? null : rawInst
-  let inviterDisplay: string | null = null
+  const engInstitution = Array.isArray(rawEngInst) ? rawEngInst[0] ?? null : rawEngInst
+
+  let engInviterDisplay: string | null = null
   try {
-    const { data: inv } = await admin.auth.admin.getUserById(instInvite.invited_by)
-    inviterDisplay = inv.user?.email ?? null
+    const { data: inv } = await admin.auth.admin.getUserById(engagement.granted_by)
+    engInviterDisplay = inv.user?.email ?? null
   } catch {
-    inviterDisplay = null
+    engInviterDisplay = null
   }
 
   return {
-    kind: 'institution',
-    inviteId: instInvite.id,
-    institutionId: instInvite.institution_id,
-    role: instInvite.role,
-    email: instInvite.email,
-    expiresAt: instInvite.expires_at,
-    acceptedAt: instInvite.accepted_at,
-    revokedAt: instInvite.revoked_at,
-    invitedBy: instInvite.invited_by,
-    tokenHash: instInvite.token_hash,
-    institutionName: institution?.name ?? null,
-    inviterDisplay,
+    kind: 'audit_engagement',
+    inviteId: engagement.id,
+    institutionId: engagement.institution_id,
+    role: 'auditor',
+    email: engagement.auditor_email,
+    expiresAt: engagement.expires_at,
+    acceptedAt: engagement.accepted_at,
+    revokedAt: engagement.revoked_at,
+    invitedBy: engagement.granted_by,
+    tokenHash: engagement.token_hash,
+    institutionName: engInstitution?.name ?? null,
+    inviterDisplay: engInviterDisplay,
+    scope: engagement.scope as 'institution_wide' | 'specific_studies',
+    startsAt: engagement.starts_at,
+    purpose: engagement.purpose,
   }
 }
 

@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -24,7 +24,7 @@ function inviteeMatchesSession(
   userEmail: string | undefined,
   orcidIds: string[]
 ): boolean {
-  if (resolved.kind === 'institution') {
+  if (resolved.kind === 'institution' || resolved.kind === 'audit_engagement') {
     const ie = resolved.email?.toLowerCase()
     return Boolean(userEmail && ie && userEmail.toLowerCase() === ie)
   }
@@ -85,6 +85,12 @@ export default async function InviteResolutionPage({ params }: PageProps) {
   }
 
   if (resolved.acceptedAt) {
+    const continueHref =
+      resolved.kind === 'study'
+        ? `/studies/${resolved.studyId}`
+        : resolved.kind === 'audit_engagement'
+          ? '/auditor'
+          : '/institutions'
     return (
       <div className="flex min-h-screen items-center justify-center px-4 py-12">
         <Card className="max-w-md">
@@ -96,9 +102,7 @@ export default async function InviteResolutionPage({ params }: PageProps) {
           </CardHeader>
           <CardContent>
             <Button asChild>
-              <Link href={resolved.kind === 'study' ? `/studies/${resolved.studyId}` : '/institutions'}>
-                Continue
-              </Link>
+              <Link href={continueHref}>Continue</Link>
             </Button>
           </CardContent>
         </Card>
@@ -116,9 +120,16 @@ export default async function InviteResolutionPage({ params }: PageProps) {
   const title =
     resolved.kind === 'study'
       ? resolved.studyTitle || 'Study invitation'
-      : resolved.institutionName || 'Institution invitation'
+      : resolved.kind === 'audit_engagement'
+        ? `${resolved.institutionName ?? 'Institution'} — audit engagement`
+        : resolved.institutionName || 'Institution invitation'
 
-  const targetLabel = resolved.kind === 'study' ? 'Study' : 'Institution'
+  const targetLabel =
+    resolved.kind === 'study'
+      ? 'Study'
+      : resolved.kind === 'audit_engagement'
+        ? 'Audit engagement'
+        : 'Institution'
   const masked = maskEmail(resolved.email)
 
   let orcidIds: string[] = []
@@ -135,10 +146,13 @@ export default async function InviteResolutionPage({ params }: PageProps) {
   const redirectBack = `/invite/${rawToken}`
   const signInHref = `/auth/signin?redirectedFrom=${encodeURIComponent(redirectBack)}&inviteNotice=${encodeURIComponent('This invitation is linked to your account. Please sign in to continue.')}`
   const signupEmail =
-    resolved.kind === 'institution' || resolved.email
+    resolved.kind === 'institution' ||
+    resolved.kind === 'audit_engagement' ||
+    resolved.email
       ? resolved.email || ''
       : ''
-  const signUpHref = `/auth/signup?redirectedFrom=${encodeURIComponent(redirectBack)}${signupEmail ? `&email=${encodeURIComponent(signupEmail)}` : ''}`
+  const setupFirstReturn = `/account/setup?next=/invites&pending_invite=1`
+  const signUpHref = `/auth/signup?redirectedFrom=${encodeURIComponent(setupFirstReturn)}${signupEmail ? `&email=${encodeURIComponent(signupEmail)}` : ''}`
 
   if (!user) {
     let accountExists = false
@@ -176,8 +190,9 @@ export default async function InviteResolutionPage({ params }: PageProps) {
             )}
             {!accountExists && resolved.email && (
               <p className="text-sm text-muted-foreground">
-                No account yet for this email—you can create one with the same address, then finish
-                setup.
+                No account yet for this email—create one with the same address. You will set your
+                password and name on the next screen, then open <strong>Invites</strong> in the app
+                to accept this invitation.
               </p>
             )}
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -200,6 +215,21 @@ export default async function InviteResolutionPage({ params }: PageProps) {
   }
 
   const matches = inviteeMatchesSession(resolved, user.email ?? undefined, orcidIds)
+
+  const { data: inviteeProfile } = await supabase
+    .from('profiles')
+    .select('account_setup_completed_at, first_name, last_name')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  const setupRequired =
+    !inviteeProfile?.account_setup_completed_at ||
+    !inviteeProfile.first_name?.trim() ||
+    !inviteeProfile.last_name?.trim()
+
+  if (matches && setupRequired) {
+    redirect('/account/setup?next=/invites&pending_invite=1')
+  }
 
   if (!matches) {
     return (
@@ -233,6 +263,25 @@ export default async function InviteResolutionPage({ params }: PageProps) {
             </span>
             {resolved.inviterDisplay && (
               <span className="block text-muted-foreground">Invited by {resolved.inviterDisplay}</span>
+            )}
+            {resolved.kind === 'audit_engagement' && (
+              <span className="mt-3 block rounded-md border border-amber-200 bg-amber-50/60 p-3 text-xs leading-relaxed text-amber-900">
+                <strong className="block text-sm">Read-only audit engagement</strong>
+                Scope:{' '}
+                {resolved.scope === 'institution_wide'
+                  ? 'every study under this institution'
+                  : 'specific studies issued by the institution admin'}
+                . Window: {new Date(resolved.startsAt).toLocaleString()} –{' '}
+                {new Date(resolved.expiresAt).toLocaleString()}.
+                {resolved.purpose ? (
+                  <>
+                    {' '}
+                    Purpose: <em>{resolved.purpose}</em>.
+                  </>
+                ) : null}{' '}
+                You will be able to read records, signatures, anchors, and audit logs covered by
+                this engagement. You cannot edit, sign, approve, or anchor anything.
+              </span>
             )}
           </CardDescription>
         </CardHeader>

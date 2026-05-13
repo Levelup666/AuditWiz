@@ -1,15 +1,20 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound, redirect } from 'next/navigation'
-import NewRecordForm from '@/components/records/new-record-form'
+import NewRecordForm, { type TaskFulfillmentProps } from '@/components/records/new-record-form'
 import { canManageStudyMembers } from '@/lib/supabase/permissions'
 import type { RecordTemplate } from '@/lib/types'
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 interface NewRecordPageProps {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ taskId?: string }>
 }
 
-export default async function NewRecordPage({ params }: NewRecordPageProps) {
+export default async function NewRecordPage({ params, searchParams }: NewRecordPageProps) {
   const { id: studyId } = await params
+  const sp = await searchParams
   const supabase = await createClient()
   const {
     data: { user },
@@ -49,6 +54,37 @@ export default async function NewRecordPage({ params }: NewRecordPageProps) {
   const metadata = (study.metadata ?? {}) as Record<string, unknown>
   const recordTemplates = (metadata.record_templates ?? []) as RecordTemplate[]
 
+  let taskFulfillment: TaskFulfillmentProps | null = null
+  const rawTaskId = sp.taskId?.trim() ?? ''
+  if (rawTaskId && UUID_RE.test(rawTaskId)) {
+    const { data: taskRow } = await supabase
+      .from('study_tasks')
+      .select('id, title, description, status, study_id')
+      .eq('id', rawTaskId)
+      .eq('study_id', studyId)
+      .maybeSingle()
+
+    if (taskRow && taskRow.status === 'open') {
+      const { data: assigneeRow } = await supabase
+        .from('study_task_assignees')
+        .select('user_id')
+        .eq('task_id', taskRow.id)
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (assigneeRow) {
+        const short = taskRow.id.replace(/-/g, '').slice(0, 8).toUpperCase()
+        taskFulfillment = {
+          taskId: taskRow.id,
+          taskTitle: taskRow.title,
+          suggestedRecordNumber: `TASK-${short}`,
+          initialTitle: taskRow.title,
+          initialSummary: taskRow.description?.trim() ?? '',
+        }
+      }
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -62,6 +98,7 @@ export default async function NewRecordPage({ params }: NewRecordPageProps) {
         templates={recordTemplates}
         primaryResearchField={primaryResearchField}
         canSaveStudyTemplate={canSaveStudyTemplate}
+        taskFulfillment={taskFulfillment}
       />
     </div>
   )

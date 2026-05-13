@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 import { toast } from '@/lib/toast'
 import { safeAppPath } from '@/lib/invites/safe-redirect'
+import { OrcidOAuthButton } from '@/components/auth/orcid-oauth-button'
 
 export default function SignInForm({ redirectedFrom }: { redirectedFrom?: string }) {
   const [email, setEmail] = useState('')
@@ -42,48 +43,63 @@ export default function SignInForm({ redirectedFrom }: { redirectedFrom?: string
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-      <div className="space-y-4">
-        <div>
-          <Label htmlFor="email">Email address</Label>
-          <Input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mt-1"
-          />
+    <>
+      <form onSubmit={handleSubmit} className="mt-8 space-y-6">
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="email">Email address</Label>
+            <Input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="mt-1"
+            />
+          </div>
         </div>
+
         <div>
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1"
-          />
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? 'Signing in...' : 'Sign in'}
+          </Button>
+        </div>
+
+        <div className="text-center text-sm">
+          <span className="text-gray-600">Don't have an account? </span>
+          <Link href="/auth/signup" className="font-medium text-primary hover:underline">
+            Sign up
+          </Link>
+        </div>
+      </form>
+
+      <div className="relative mt-8">
+        <div className="absolute inset-0 flex items-center" aria-hidden="true">
+          <div className="w-full border-t border-gray-200" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-gray-50 px-2 text-gray-500">Or</span>
         </div>
       </div>
 
-      <div>
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? 'Signing in...' : 'Sign in'}
-        </Button>
+      <div className="mt-6">
+        <OrcidOAuthButton mode="signin" nextPath={redirectedFrom} className="w-full" />
       </div>
-
-      <div className="text-center text-sm">
-        <span className="text-gray-600">Don't have an account? </span>
-        <Link href="/auth/signup" className="font-medium text-primary hover:underline">
-          Sign up
-        </Link>
-      </div>
-    </form>
+    </>
   )
 }

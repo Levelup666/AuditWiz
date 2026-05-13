@@ -24,7 +24,12 @@ export type AuditActionType =
   | 'share_created' | 'share_accessed'
   | 'ai_action' | 'system_action'
   | 'blockchain_anchored'
-  | 'invite_created' | 'invite_opened' | 'invite_accepted' | 'invite_rejected' | 'invite_expired';
+  | 'invite_created' | 'invite_opened' | 'invite_accepted' | 'invite_rejected' | 'invite_expired'
+  | 'invite_resent' | 'invite_revoked'
+  | 'study_task_created' | 'study_task_updated' | 'study_task_cancelled' | 'study_task_completed'
+  | 'audit_engagement_granted' | 'audit_engagement_accepted' | 'audit_engagement_revoked'
+  | 'audit_engagement_extended' | 'audit_engagement_expired'
+  | 'audit_engagement_accessed' | 'audit_engagement_export';
 
 export interface Institution {
   id: string;
@@ -183,6 +188,35 @@ export interface BlockchainAnchor {
 
 // System actor identifier for AI/automated actions
 export const SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
+
+// External / executive auditor engagement: time-boxed read-only audit grant.
+export type AuditEngagementScope = 'institution_wide' | 'specific_studies';
+
+export interface AuditEngagement {
+  id: string;
+  institution_id: string;
+  auditor_email: string;
+  auditor_user_id: string | null;
+  scope: AuditEngagementScope;
+  purpose: string | null;
+  starts_at: string;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  revocation_reason: string | null;
+  granted_by: string;
+  last_sent_at: string;
+  resend_count: number;
+  invite_first_opened_at: string | null;
+  expiry_audit_logged_at: string | null;
+  created_at: string;
+}
+
+export interface AuditEngagementStudy {
+  engagement_id: string;
+  study_id: string;
+  added_at: string;
+}
 
 // Custom field type for record form (add-your-own fields)
 export type CustomFieldType = 'text' | 'integer' | 'number' | 'date' | 'boolean' | 'list';

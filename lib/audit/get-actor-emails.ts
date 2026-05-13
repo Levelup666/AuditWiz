@@ -9,9 +9,9 @@ export async function getActorEmailsForAudit(
     actorIds.map(async (id) => {
       try {
         const { data } = await admin.auth.admin.getUserById(id)
-        emails[id] = data.user?.email ?? id.slice(0, 8) + '…'
+        emails[id] = data.user?.email ?? 'Email unavailable'
       } catch {
-        emails[id] = id.slice(0, 8) + '…'
+        emails[id] = 'Email unavailable'
       }
     })
   )

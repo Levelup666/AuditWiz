@@ -1,0 +1,3 @@
+{"sessionId":"206a5a","location":"lib/supabase/audit.ts:createAuditEvent","message":"before create_audit_event rpc","data":{"actionType":"study_task_updated","targetEntityType":"study_task","hypothesisId":"H1-H3"},"timestamp":1777069204952}
+{"sessionId":"206a5a","location":"lib/supabase/audit.ts:createAuditEvent","message":"before create_audit_event rpc","data":{"actionType":"study_task_created","targetEntityType":"study_task","hypothesisId":"H1-H3"},"timestamp":1777072345145}
+{"sessionId":"206a5a","location":"lib/supabase/audit.ts:createAuditEvent","message":"before create_audit_event rpc","data":{"actionType":"study_task_cancelled","targetEntityType":"study_task","hypothesisId":"H1-H3"},"timestamp":1777072359881}

@@ -73,7 +73,7 @@ export default async function RecordSignatures({ recordId, recordVersion }: Reco
                 last_name: profile.last_name,
                 display_name: profile.display_name,
               },
-              { email: signerEmail, userId: sig.signer_id }
+              { email: signerEmail }
             )
           : signerEmail || 'Unknown'
         return (

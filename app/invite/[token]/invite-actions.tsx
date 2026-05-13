@@ -33,7 +33,12 @@ export default function InviteActions({ rawToken, canAccept }: InviteActionsProp
       err.setupPath = typeof data.setup_path === 'string' ? data.setup_path : undefined
       throw err
     }
-    return data as { study_id?: string; institution_id?: string; kind?: string }
+    return data as {
+      study_id?: string
+      institution_id?: string
+      engagement_id?: string
+      kind?: string
+    }
   }
 
   async function handleAccept() {
@@ -45,6 +50,8 @@ export default function InviteActions({ rawToken, canAccept }: InviteActionsProp
         router.push(`/studies/${data.study_id}`)
       } else if (data.kind === 'institution' && data.institution_id) {
         router.push(`/institutions`)
+      } else if (data.kind === 'audit_engagement' && data.engagement_id) {
+        router.push(`/auditor`)
       } else {
         router.push('/studies')
       }
@@ -54,7 +61,7 @@ export default function InviteActions({ rawToken, canAccept }: InviteActionsProp
       if (err?.requiresAccountSetup) {
         const setupPath =
           err.setupPath ??
-          `/account/setup?next=${encodeURIComponent(`/invite/${rawToken}`)}&invite=${encodeURIComponent(rawToken)}`
+          '/account/setup?next=/invites&pending_invite=1'
         toast.error('Password required', 'Set a password in account setup before accepting this invite.')
         router.push(setupPath)
         return

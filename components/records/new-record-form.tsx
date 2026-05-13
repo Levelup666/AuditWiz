@@ -32,13 +32,21 @@ import RecordNotesEditor from '@/components/records/record-notes-editor'
 import RecordTemplateBrowser from '@/components/records/record-template-browser'
 import { sanitizeRecordNotesHtml } from '@/lib/sanitize-html'
 
-function SubmitButton() {
+function SubmitButton({ label }: { label: string }) {
   const { pending } = useFormStatus()
   return (
     <Button type="submit" disabled={pending}>
-      {pending ? 'Creating...' : 'Create Record'}
+      {pending ? 'Creating...' : label}
     </Button>
   )
+}
+
+export type TaskFulfillmentProps = {
+  taskId: string
+  taskTitle: string
+  suggestedRecordNumber: string
+  initialTitle: string
+  initialSummary: string
 }
 
 interface NewRecordFormProps {
@@ -46,6 +54,7 @@ interface NewRecordFormProps {
   templates?: RecordTemplate[]
   primaryResearchField?: string | null
   canSaveStudyTemplate?: boolean
+  taskFulfillment?: TaskFulfillmentProps | null
 }
 
 export default function NewRecordForm({
@@ -53,6 +62,7 @@ export default function NewRecordForm({
   templates = [],
   primaryResearchField = null,
   canSaveStudyTemplate = false,
+  taskFulfillment = null,
 }: NewRecordFormProps) {
   const router = useRouter()
   const [browseOpen, setBrowseOpen] = useState(false)
@@ -63,9 +73,10 @@ export default function NewRecordForm({
   const [customFields, setCustomFields] = useState<CustomFieldFormRow[]>([])
   const [selectedStudyTemplateId, setSelectedStudyTemplateId] = useState<string>('')
   const [notesEditorKey, setNotesEditorKey] = useState(0)
-  const [title, setTitle] = useState('')
-  const [summary, setSummary] = useState('')
+  const [title, setTitle] = useState(() => taskFulfillment?.initialTitle ?? '')
+  const [summary, setSummary] = useState(() => taskFulfillment?.initialSummary ?? '')
   const [notes, setNotes] = useState('')
+  const [recordNumber, setRecordNumber] = useState(() => taskFulfillment?.suggestedRecordNumber ?? '')
 
   function hasFormInput() {
     return Boolean(
@@ -177,11 +188,17 @@ export default function NewRecordForm({
     const notesVal = notes.trim()
     const content = buildContentFromForm(titleVal, summaryVal, notesVal, customFields)
     const fd = new FormData()
-    fd.set('record_number', (formData.get('record_number') as string) ?? '')
+    fd.set('record_number', recordNumber.trim() || ((formData.get('record_number') as string) ?? ''))
     fd.set('content', JSON.stringify(content))
+    if (taskFulfillment?.taskId) {
+      fd.set('task_id', taskFulfillment.taskId)
+    }
     const result = await createRecord(studyId, fd)
-    if (result?.error) {
+    if (result && 'error' in result) {
       toast.error('Create record failed', result.error)
+      if (result.recordId) {
+        router.push(`/studies/${studyId}/records/${result.recordId}`)
+      }
     } else {
       toast.success('Record created successfully')
     }
@@ -220,8 +237,21 @@ export default function NewRecordForm({
     router.refresh()
   }
 
+  const submitLabel = taskFulfillment ? 'Create record & complete task' : 'Create Record'
+
   return (
     <>
+      {taskFulfillment && (
+        <div
+          className="max-w-2xl rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-foreground"
+          role="status"
+        >
+          <p className="font-medium">Completing study task</p>
+          <p className="mt-1 text-muted-foreground">
+            {taskFulfillment.taskTitle}. Saving this record will mark the task complete and link it to the new record.
+          </p>
+        </div>
+      )}
       <form action={handleSubmit} className="max-w-2xl space-y-6">
         <div className="space-y-4">
           <div className="flex flex-wrap items-end gap-3">
@@ -256,6 +286,8 @@ export default function NewRecordForm({
               required
               placeholder="e.g. REC-001"
               className="mt-1"
+              value={recordNumber}
+              onChange={(e) => setRecordNumber(e.target.value)}
             />
             <p className="mt-1 text-xs text-gray-500">Unique identifier for this record within the study.</p>
           </div>
@@ -413,7 +445,7 @@ export default function NewRecordForm({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <SubmitButton />
+          <SubmitButton label={submitLabel} />
           <Button type="button" variant="outline" onClick={() => window.history.back()}>
             Cancel
           </Button>

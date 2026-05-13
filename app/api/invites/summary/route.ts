@@ -37,8 +37,16 @@ export async function GET() {
     .is('revoked_at', null)
     .gt('expires_at', now)
 
-  if (sErr || iErr) {
-    return NextResponse.json({ study: 0, institution: 0, total: 0 })
+  // Pending audit engagement invites (visible via the "Invitee can view own pending engagement invite" RLS)
+  const { data: engagementRows, error: eErr } = await supabase
+    .from('audit_engagements')
+    .select('id, auditor_email')
+    .is('accepted_at', null)
+    .is('revoked_at', null)
+    .gt('expires_at', now)
+
+  if (sErr || iErr || eErr) {
+    return NextResponse.json({ study: 0, institution: 0, audit_engagement: 0, total: 0 })
   }
 
   const study = (studyRows || []).filter((inv) => {
@@ -52,7 +60,17 @@ export async function GET() {
     return inv.email.trim().toLowerCase() === userEmailNorm
   }).length
 
-  const total = study + institution
+  const auditEngagement = (engagementRows || []).filter((inv) => {
+    if (!userEmailNorm || !inv.auditor_email) return false
+    return inv.auditor_email.trim().toLowerCase() === userEmailNorm
+  }).length
 
-  return NextResponse.json({ study, institution, total })
+  const total = study + institution + auditEngagement
+
+  return NextResponse.json({
+    study,
+    institution,
+    audit_engagement: auditEngagement,
+    total,
+  })
 }

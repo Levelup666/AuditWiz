@@ -12,7 +12,7 @@ function matchesInvitee(
   userEmail: string | undefined,
   userOrcidIds: string[]
 ): boolean {
-  if (resolved.kind === 'institution') {
+  if (resolved.kind === 'institution' || resolved.kind === 'audit_engagement') {
     const ie = resolved.email?.toLowerCase()
     return Boolean(userEmail && ie && userEmail.toLowerCase() === ie)
   }
@@ -60,11 +60,26 @@ export async function declineInviteByTokenForUser(
   }
 
   const table =
-    resolved.kind === 'study' ? 'study_member_invites' : 'institution_invites'
+    resolved.kind === 'study'
+      ? 'study_member_invites'
+      : resolved.kind === 'institution'
+        ? 'institution_invites'
+        : 'audit_engagements'
+  const targetEntityType =
+    resolved.kind === 'study'
+      ? 'study_member_invite'
+      : resolved.kind === 'institution'
+        ? 'institution_invite'
+        : 'audit_engagement'
   const now = new Date().toISOString()
   const { error: upErr } = await admin
     .from(table)
-    .update({ revoked_at: now })
+    .update({
+      revoked_at: now,
+      ...(resolved.kind === 'audit_engagement'
+        ? { revocation_reason: 'declined_by_invitee' }
+        : {}),
+    })
     .eq('id', resolved.inviteId)
 
   if (upErr) {
@@ -79,21 +94,26 @@ export async function declineInviteByTokenForUser(
     declined_by: userId,
   })
 
+  const metadata: Record<string, unknown> = { kind: resolved.kind }
+  if (resolved.kind === 'study') {
+    metadata.study_id = resolved.studyId
+  } else if (resolved.kind === 'institution') {
+    metadata.institution_id = resolved.institutionId
+  } else {
+    metadata.institution_id = resolved.institutionId
+    metadata.engagement_id = resolved.inviteId
+  }
+
   await createAuditEventWithClient(
     admin,
     studyId,
     userId,
     'invite_rejected',
-    resolved.kind === 'study' ? 'study_member_invite' : 'institution_invite',
+    targetEntityType,
     resolved.inviteId,
     null,
     stateHash,
-    {
-      kind: resolved.kind,
-      ...(resolved.kind === 'study'
-        ? { study_id: resolved.studyId }
-        : { institution_id: resolved.institutionId }),
-    }
+    metadata
   )
 
   return { ok: true }
