@@ -5,6 +5,7 @@ import { canManageStudyMembers, isActiveInstitutionMember } from '@/lib/supabase
 import { getStudyCollaborationPolicy } from '@/lib/study-institution-policy'
 import {
   inviteEmailDispatchFields,
+  orcidOnlyInviteDispatchMessage,
   sendExistingUserPendingInviteNotification,
   sendPendingInviteEmail,
 } from '@/lib/email/pending-invite-notification'
@@ -525,6 +526,11 @@ export async function POST(
       { role, orcid_id: orcidId, pending: true, kind: 'study' }
     )
     let emailDispatch: ReturnType<typeof inviteEmailDispatchFields> | null = null
+    const baseUrl =
+      process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, '') ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
+    const inviteUrl = `${baseUrl}/invite/${rawToken}`
+
     if (emailTrim) {
       const orcidInviteAdmin = createAdminClient()
       const emailResult = await sendPendingInviteEmail({
@@ -536,13 +542,23 @@ export async function POST(
         supabaseAdmin: orcidInviteAdmin,
       })
       emailDispatch = inviteEmailDispatchFields(emailResult)
+    } else {
+      emailDispatch = {
+        email_dispatched: false,
+        email_channel: null,
+        email_dispatch_message: orcidOnlyInviteDispatchMessage(orcidId, inviteUrl),
+        email_dispatch_detail: null,
+        email_supabase_error: null,
+      }
     }
     return NextResponse.json({
       success: true,
       pending: true,
       expires_at: expiresAt.toISOString(),
-      message:
-        'Invitation created. They can accept from the Invites page after signing in with this ORCID (email notification sent if an address was provided and mail is configured).',
+      invite_url: inviteUrl,
+      message: emailTrim
+        ? 'Invitation created. They can accept from the Invites page after signing in with this ORCID (email notification sent if mail is configured).'
+        : orcidOnlyInviteDispatchMessage(orcidId, inviteUrl),
       ...(emailDispatch ?? {}),
     })
   }

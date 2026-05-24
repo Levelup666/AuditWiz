@@ -6,6 +6,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from '@/lib/toast'
 import { saveAccountSetup } from '@/app/account/setup/actions'
+import { userHasUsableAuthEmail } from '@/lib/auth/orcid-email'
+import { clearPendingOrcidContactEmail } from '@/lib/auth/pending-orcid-contact-email'
+import { OrcidContactEmailField } from '@/components/account/orcid-contact-email-field'
 import { Loader2 } from 'lucide-react'
 
 interface AccountSetupFormProps {
@@ -14,6 +17,17 @@ interface AccountSetupFormProps {
   /** From /account/setup?…&pending_invite=1 — require password before Invites. */
   pendingInviteFlow?: boolean
   userEmail?: string
+  orcidPrimary?: boolean
+  orcidEmailLocked?: boolean
+  /** Show required editable contact email (ORCID-primary without usable email). */
+  needsOrcidEmail?: boolean
+  showOrcidEmailInput?: boolean
+  /** Emails read from ORCID (public/member); shown as hints when non-empty. */
+  orcidDiscoverableEmails?: string[]
+  /** Public API returned no emails — user must attest manual entry matches ORCID. */
+  orcidEmailRequiresAttestation?: boolean
+  /** Block notification toggles until contact email is on file. */
+  notificationsDisabled?: boolean
   initialFirstName: string | null
   initialLastName: string | null
   initialNickname: string | null
@@ -26,6 +40,13 @@ export default function AccountSetupForm({
   inviteToken,
   pendingInviteFlow = false,
   userEmail,
+  orcidPrimary = false,
+  orcidEmailLocked = false,
+  needsOrcidEmail = false,
+  showOrcidEmailInput = false,
+  orcidDiscoverableEmails = [],
+  orcidEmailRequiresAttestation = false,
+  notificationsDisabled = false,
   initialFirstName,
   initialLastName,
   initialNickname,
@@ -45,7 +66,25 @@ export default function AccountSetupForm({
     const fn = (fdNames.get('first_name') as string)?.trim() ?? ''
     const ln = (fdNames.get('last_name') as string)?.trim() ?? ''
 
-    if ((inviteToken || pendingInviteFlow) && !pwd) {
+    const orcidEmail = (fdNames.get('orcid_contact_email') as string)?.trim() ?? ''
+
+    if (showOrcidEmailInput && !orcidEmail) {
+      toast.error('Email required', 'Enter your contact email to continue.')
+      return
+    }
+
+    if (showOrcidEmailInput && orcidEmailRequiresAttestation) {
+      const attested = fdNames.get('orcid_email_attested') === 'on'
+      if (!attested) {
+        toast.error(
+          'Confirmation required',
+          'Confirm that your entry matches the email on your ORCID account.'
+        )
+        return
+      }
+    }
+
+    if ((inviteToken || pendingInviteFlow) && !orcidPrimary && !pwd) {
       toast.error('Password', 'Set a password to finish account setup before you accept invites.')
       return
     }
@@ -78,11 +117,18 @@ export default function AccountSetupForm({
         setPending(false)
         return
       }
+      clearPendingOrcidContactEmail()
     } catch (err) {
       toast.error('Something went wrong', err instanceof Error ? err.message : 'Try again.')
       setPending(false)
     }
   }
+
+  const hasUsableEmail = userHasUsableAuthEmail(userEmail)
+  const showContactSection =
+    showOrcidEmailInput ||
+    (orcidEmailLocked && hasUsableEmail) ||
+    ((inviteToken || pendingInviteFlow) && hasUsableEmail)
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
@@ -90,15 +136,40 @@ export default function AccountSetupForm({
       {inviteToken ? <input type="hidden" name="invite_token" value={inviteToken} /> : null}
       {pendingInviteFlow ? <input type="hidden" name="pending_invite_flow" value="on" /> : null}
 
-      {(inviteToken || pendingInviteFlow) && userEmail ? (
+      {showContactSection ? (
         <div className="space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Email</h2>
+            <h2 className="text-lg font-semibold text-foreground">Contact email</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              This invitation is tied to your account email (read-only).
+              {showOrcidEmailInput ? (
+                <>
+                  Required for study and institution invites and for email notifications. Use the
+                  same email as on your ORCID account. It cannot be changed after you save.
+                  {orcidEmailRequiresAttestation
+                    ? ' We could not read your ORCID email automatically—enter it below and confirm.'
+                    : orcidDiscoverableEmails.length > 0
+                      ? ' Choose a suggested address or type the one on your ORCID record.'
+                      : ' Enter the address listed on your ORCID record.'}
+                </>
+              ) : orcidEmailLocked ? (
+                <>
+                  This address comes from your ORCID account and is used for invites and
+                  notifications. It cannot be changed in AuditWiz.
+                </>
+              ) : (
+                <>This invitation is tied to your account email (read-only).</>
+              )}
             </p>
           </div>
-          <Input readOnly value={userEmail} className="max-w-md bg-muted" />
+          {showOrcidEmailInput ? (
+            <OrcidContactEmailField
+              orcidDiscoverableEmails={orcidDiscoverableEmails}
+              orcidEmailRequiresAttestation={orcidEmailRequiresAttestation}
+              initialEmail={hasUsableEmail ? userEmail : ''}
+            />
+          ) : (
+            <Input readOnly value={userEmail} className="max-w-md bg-muted" />
+          )}
         </div>
       ) : null}
 
@@ -154,50 +225,57 @@ export default function AccountSetupForm({
         </div>
       </div>
 
-      <div className="space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm">
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">Password</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {inviteToken || pendingInviteFlow ? (
-              <>
-                You need a password you will use to sign in before you can accept invitations in the
-                app.
-              </>
-            ) : (
-              <>
-                If you want to change your password, enter a new one here. Leave both fields blank to
-                keep your current password.
-              </>
-            )}
-          </p>
-        </div>
-        <div className="grid max-w-md gap-4 sm:grid-cols-1">
-          <div className="space-y-2">
-            <Label htmlFor="password">New password</Label>
-            <Input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-            />
+      {!orcidPrimary || inviteToken || pendingInviteFlow ? (
+        <div className="space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Password</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {inviteToken || pendingInviteFlow ? (
+                <>
+                  You need a password you will use to sign in before you can accept invitations in
+                  the app.
+                </>
+              ) : orcidPrimary ? (
+                <>
+                  Optional: add a password if you also want to sign in with email and password. You
+                  can continue using ORCID only.
+                </>
+              ) : (
+                <>
+                  If you want to change your password, enter a new one here. Leave both fields blank
+                  to keep your current password.
+                </>
+              )}
+            </p>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="confirm_password">Confirm password</Label>
-            <Input
-              id="confirm_password"
-              name="confirm_password"
-              type="password"
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="••••••••"
-            />
+          <div className="grid max-w-md gap-4 sm:grid-cols-1">
+            <div className="space-y-2">
+              <Label htmlFor="password">New password</Label>
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm_password">Confirm password</Label>
+              <Input
+                id="confirm_password"
+                name="confirm_password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm">
         <div>
@@ -208,11 +286,25 @@ export default function AccountSetupForm({
           </p>
         </div>
         <div className="space-y-3">
-          <label className="flex cursor-pointer items-start gap-3 rounded-md border border-transparent p-2 hover:bg-muted/40">
+          {notificationsDisabled || showOrcidEmailInput ? (
+            <p className="text-sm text-muted-foreground">
+              {showOrcidEmailInput
+                ? 'Save your contact email above before enabling email notifications.'
+                : 'Save your ORCID contact email above before enabling email notifications.'}
+            </p>
+          ) : null}
+          <label
+            className={`flex items-start gap-3 rounded-md border border-transparent p-2 ${
+              notificationsDisabled || showOrcidEmailInput
+                ? 'cursor-not-allowed opacity-50'
+                : 'cursor-pointer hover:bg-muted/40'
+            }`}
+          >
             <input
               type="checkbox"
               name="notification_email_invites"
               defaultChecked={initialEmailInvites}
+              disabled={notificationsDisabled || showOrcidEmailInput}
               className="mt-1 h-4 w-4 rounded border-input"
             />
             <span>
@@ -223,11 +315,18 @@ export default function AccountSetupForm({
               </span>
             </span>
           </label>
-          <label className="flex cursor-pointer items-start gap-3 rounded-md border border-transparent p-2 hover:bg-muted/40">
+          <label
+            className={`flex items-start gap-3 rounded-md border border-transparent p-2 ${
+              notificationsDisabled || showOrcidEmailInput
+                ? 'cursor-not-allowed opacity-50'
+                : 'cursor-pointer hover:bg-muted/40'
+            }`}
+          >
             <input
               type="checkbox"
               name="notification_email_study_activity"
               defaultChecked={initialEmailStudy}
+              disabled={notificationsDisabled || showOrcidEmailInput}
               className="mt-1 h-4 w-4 rounded border-input"
             />
             <span>

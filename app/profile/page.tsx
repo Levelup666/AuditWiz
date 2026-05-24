@@ -5,10 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import OrcidBadge from '@/components/profile/orcid-badge'
 import { OrcidOAuthButton } from '@/components/auth/orcid-oauth-button'
 import { formatMemberListName } from '@/lib/profile/member-display-name'
-
-function isOrcidProvider(p: unknown): boolean {
-  return typeof p === 'string' && (p.startsWith('custom:orcid') || p === 'orcid')
-}
+import { isOrcidPrimaryAccount, userSignedInViaOrcid } from '@/lib/auth/is-orcid-auth'
+import { userNeedsOrcidEmailCapture } from '@/lib/auth/orcid-email-requirements'
 
 export default async function ProfilePage() {
   const supabase = await createClient()
@@ -24,10 +22,14 @@ export default async function ProfilePage() {
   const { data: profile } = await supabase
     .from('profiles')
     .select(
-      'orcid_id, orcid_verified, orcid_affiliation_snapshot, display_name, first_name, last_name, nickname'
+      'orcid_id, orcid_verified, orcid_email_locked, orcid_affiliation_snapshot, display_name, first_name, last_name, nickname'
     )
     .eq('id', userId)
     .maybeSingle()
+
+  if (userNeedsOrcidEmailCapture(user, profile)) {
+    redirect(`/account/setup?orcid_email_required=1&next=${encodeURIComponent('/profile')}`)
+  }
 
   const { data: identities } = await supabase
     .from('user_identities')
@@ -38,10 +40,9 @@ export default async function ProfilePage() {
   const hasOrcid = Boolean(profile?.orcid_id)
   const orcidVerified = Boolean(profile?.orcid_verified)
 
-  const appMeta = (user!.app_metadata ?? {}) as { provider?: unknown; providers?: unknown }
-  const providers = Array.isArray(appMeta.providers) ? appMeta.providers : []
-  const signedInViaOrcid =
-    isOrcidProvider(appMeta.provider) || providers.some(isOrcidProvider)
+  const signedInViaOrcid = userSignedInViaOrcid(user!)
+  const orcidPrimary = isOrcidPrimaryAccount(user!, profile)
+  const orcidEmailLocked = Boolean(profile?.orcid_email_locked)
 
   const listLabel = profile
     ? formatMemberListName(
@@ -71,9 +72,19 @@ export default async function ProfilePage() {
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
           <div className="space-y-2">
-            <p>
-              <span className="text-gray-600">Email:</span> {user!.email ?? '—'}
+            <p className="flex flex-wrap items-center gap-2">
+              <span className="text-gray-600">Email:</span>
+              <span>{user!.email ?? '—'}</span>
+              {orcidEmailLocked && (
+                <span className="text-xs text-muted-foreground">(from ORCID, cannot be changed)</span>
+              )}
             </p>
+            {orcidEmailLocked && (
+              <p className="text-xs text-muted-foreground">
+                Contact email is managed through your ORCID account and used for invites and
+                notifications.
+              </p>
+            )}
             {hasOrcid && (
               <p className="flex flex-wrap items-center gap-2">
                 <span className="text-gray-600">ORCID iD:</span>
@@ -133,6 +144,38 @@ export default async function ProfilePage() {
         </CardContent>
       </Card>
 
+      {(hasOrcid && orcidPrimary) || signedInViaOrcid ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Sign-in credential</CardTitle>
+            <CardDescription>
+              You sign in with ORCID. Your ORCID iD is your verified identity; contact email is
+              managed separately for invites and notifications.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <p className="flex flex-wrap items-center gap-2">
+              <span className="text-gray-600">Provider:</span>
+              <span className="font-medium">ORCID</span>
+            </p>
+            {hasOrcid ? (
+              <p className="flex flex-wrap items-center gap-2">
+                <span className="text-gray-600">ORCID iD:</span>
+                <OrcidBadge orcidId={profile!.orcid_id!} verified={orcidVerified} />
+                <Link
+                  href={`https://orcid.org/${profile!.orcid_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono hover:underline"
+                >
+                  {profile!.orcid_id}
+                </Link>
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -166,10 +209,7 @@ export default async function ProfilePage() {
             <div className="space-y-3">
               <OrcidOAuthButton mode="link" className="w-full max-w-xs" />
               <p className="text-xs text-muted-foreground max-w-md">
-                You will be redirected to ORCID to approve access, then returned here. Your Supabase
-                project must register ORCID as a custom OIDC provider (issuer https://orcid.org) with
-                identifier matching <code className="text-xs">NEXT_PUBLIC_SUPABASE_ORCID_PROVIDER</code>{' '}
-                (default <code className="text-xs">custom:orcid</code>).
+                You will be redirected to ORCID to approve access, then returned here.
               </p>
             </div>
           )}

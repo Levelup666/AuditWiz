@@ -376,3 +376,11 @@ ${inviteUrl}${expiryNote}`
     studyInviteAudience: 'existing_auth_user',
   }
 }
+
+/** User-facing message when a pending ORCID-only invite has no email to send. */
+export function orcidOnlyInviteDispatchMessage(orcidId: string, inviteUrl?: string): string {
+  const linkNote = inviteUrl
+    ? ` Share this link: ${inviteUrl}`
+    : ' Share the invite link from your records.'
+  return `Pending invite created for ORCID ${orcidId}. No email was sent (no address on file). Ask them to sign in with ORCID, complete contact email setup if prompted, then open Invites to accept.${linkNote}`
+}

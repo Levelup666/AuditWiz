@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { userSignedInViaOrcid } from '@/lib/auth/is-orcid-auth'
 
 export type OrcidSessionIdentity = {
   orcidId: string
@@ -49,13 +50,13 @@ export default function NavProvider({ children }: { children: React.ReactNode })
     const supabase = createClient()
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsAuthenticated(!!session)
-      setSignedInViaOrcid(isOrcidSession(session?.user))
+      setSignedInViaOrcid(userSignedInViaOrcid(session?.user ?? {}))
     })
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsAuthenticated(!!session)
-      setSignedInViaOrcid(isOrcidSession(session?.user))
+      setSignedInViaOrcid(userSignedInViaOrcid(session?.user ?? {}))
     })
     return () => subscription.unsubscribe()
   }, [pathname])
@@ -146,16 +147,5 @@ export default function NavProvider({ children }: { children: React.ReactNode })
     >
       {children}
     </NavContext.Provider>
-  )
-}
-
-function isOrcidSession(user: { app_metadata?: Record<string, unknown> } | null | undefined): boolean {
-  if (!user) return false
-  const meta = user.app_metadata ?? {}
-  const primary = typeof meta.provider === 'string' ? meta.provider : ''
-  const providers = Array.isArray(meta.providers) ? meta.providers : []
-  if (primary.startsWith('custom:orcid') || primary === 'orcid') return true
-  return providers.some(
-    (p) => typeof p === 'string' && (p.startsWith('custom:orcid') || p === 'orcid')
   )
 }

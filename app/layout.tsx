@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
+import { Suspense } from "react";
 import "./globals.css";
 import FloatingNav from "@/components/navigation/floating-nav";
 import AppShell from "@/components/navigation/app-shell";
@@ -7,6 +8,7 @@ import NavProvider from "@/components/navigation/nav-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { AUTH_HASH_CAPTURE_KEY } from "@/lib/auth/early-hash-capture";
+import { OrcidSessionRefreshOnQuery } from "@/components/auth/orcid-session-refresh";
 
 /** Runs before Next/Supabase hydrate so #access_token / type=invite survive client-side hash clearing. */
 const earlyHashCaptureScript = `(function(){try{var p=location.pathname;if(p!=="/auth/signin"&&p!=="/auth/signup")return;var h=location.hash;if(!h||h[0]!=="#")return;var r=h.slice(1);if(r.indexOf("access_token=")===-1&&r.indexOf("type=")===-1)return;var u=new URLSearchParams(r);sessionStorage.setItem(${JSON.stringify(
@@ -31,6 +33,9 @@ export default function RootLayout({
         </Script>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <NavProvider>
+            <Suspense fallback={null}>
+              <OrcidSessionRefreshOnQuery />
+            </Suspense>
             <FloatingNav />
             <AppShell>{children}</AppShell>
           </NavProvider>

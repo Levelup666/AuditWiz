@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isOrcidPrimaryAccount } from '@/lib/auth/is-orcid-auth'
 
 export async function GET() {
   const supabase = await createClient()
@@ -14,7 +15,7 @@ export async function GET() {
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select(
-      'id, orcid_id, orcid_verified, orcid_affiliation_snapshot, display_name, first_name, last_name, nickname, created_at, updated_at'
+      'id, orcid_id, orcid_verified, orcid_email_locked, orcid_affiliation_snapshot, display_name, first_name, last_name, nickname, created_at, updated_at'
     )
     .eq('id', user.id)
     .maybeSingle()
@@ -29,9 +30,22 @@ export async function GET() {
     .eq('user_id', user.id)
     .is('revoked_at', null)
 
+  const primaryAuthMethod: 'orcid' | 'email' = isOrcidPrimaryAccount(user, profile)
+    ? 'orcid'
+    : 'email'
+
   return NextResponse.json({
     profile: profile ?? null,
     identities: identities ?? [],
     email: user.email,
+    orcidEmailLocked: Boolean(profile?.orcid_email_locked),
+    primaryAuthMethod,
+    orcidCredential: profile?.orcid_id
+      ? {
+          provider: 'orcid',
+          orcidId: profile.orcid_id,
+          verified: Boolean(profile.orcid_verified),
+        }
+      : null,
   })
 }

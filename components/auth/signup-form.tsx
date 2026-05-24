@@ -25,6 +25,7 @@ export default function SignUpForm({
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [orcidContactEmail, setOrcidContactEmail] = useState(initialEmail)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -194,15 +195,40 @@ export default function SignUpForm({
         </div>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-6 space-y-4 rounded-lg border border-gray-200 bg-white p-4">
+        <div>
+          <Label htmlFor="orcidSignupEmail">Contact email (required for ORCID sign-up)</Label>
+          <Input
+            id="orcidSignupEmail"
+            name="orcidSignupEmail"
+            type="email"
+            autoComplete="email"
+            required
+            value={orcidContactEmail}
+            onChange={(e) => setOrcidContactEmail(e.target.value)}
+            className="mt-1"
+            placeholder="you@institution.edu"
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Use the same email as on your ORCID record. You will confirm it again after ORCID
+            sign-in if we cannot read it automatically.
+          </p>
+        </div>
         <OrcidOAuthButton
           mode="signup"
-          nextPath={redirectedFrom}
+          nextPath={
+            redirectedFrom
+              ? `/account/setup?orcid_email_required=1&next=${encodeURIComponent(redirectedFrom)}`
+              : undefined
+          }
           className="w-full"
           label="Sign up with ORCID"
+          pendingContactEmail={orcidContactEmail}
+          disabled={!orcidContactEmail.trim()}
         />
-        <p className="mt-2 text-center text-xs text-gray-500">
-          Creates your account after ORCID sign-in. Configure ORCID as a custom OIDC provider in Supabase.
+        <p className="text-center text-xs text-gray-500">
+          Creates your account after ORCID sign-in. Email is required for invites and
+          notifications.
         </p>
       </div>
     </>

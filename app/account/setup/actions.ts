@@ -10,6 +10,13 @@ import { acceptStudyInviteForUser } from '@/lib/invites/accept-study'
 import { acceptInstitutionInviteForUser } from '@/lib/invites/accept-institution'
 import { safeAppPath } from '@/lib/invites/safe-redirect'
 import { profileDisplayNameForDb } from '@/lib/profile/member-display-name'
+import { isOrcidPrimaryAccount } from '@/lib/auth/is-orcid-auth'
+import { setOrcidLockedEmailForUser } from '@/lib/auth/sync-orcid-email'
+import {
+  userNeedsOrcidEmailCapture,
+  userNeedsOrcidEmailInput,
+} from '@/lib/auth/orcid-email-requirements'
+import { userHasUsableAuthEmail } from '@/lib/auth/orcid-email'
 
 function safeNextPath(next: string | null | undefined): string {
   return safeAppPath(next, '/invites')
@@ -41,14 +48,47 @@ export async function saveAccountSetup(formData: FormData) {
 
   const { data: prof } = await supabase
     .from('profiles')
-    .select('id, account_setup_completed_at, first_name, last_name')
+    .select(
+      'id, account_setup_completed_at, first_name, last_name, orcid_id, orcid_verified, orcid_email_locked'
+    )
     .eq('id', user.id)
     .maybeSingle()
+
+  const orcidPrimary = isOrcidPrimaryAccount(user, prof)
+  const needsOrcidEmail = userNeedsOrcidEmailCapture(user, prof)
+  const showOrcidEmailInput = userNeedsOrcidEmailInput(user, prof)
+  const orcidContactEmail = (formData.get('orcid_contact_email') as string)?.trim() ?? ''
+  let orcidEmailRequiresSessionRefresh = false
+
+  if (
+    prof?.orcid_email_locked &&
+    orcidContactEmail &&
+    userHasUsableAuthEmail(user.email)
+  ) {
+    return { error: 'Your contact email is locked to your ORCID email and cannot be changed.' }
+  }
+
+  if (showOrcidEmailInput) {
+    if (!orcidContactEmail) {
+      return { error: 'Enter the email address on your ORCID record.' }
+    }
+    const orcidEmailAttested = formData.get('orcid_email_attested') === 'on'
+    const emailRes = await setOrcidLockedEmailForUser(supabase, orcidContactEmail, {
+      attested: orcidEmailAttested,
+    })
+    if (!emailRes.ok) return { error: emailRes.error }
+    orcidEmailRequiresSessionRefresh = Boolean(emailRes.requiresSessionRefresh)
+  }
+
+  const {
+    data: { user: userAfterEmail },
+  } = await supabase.auth.getUser()
+  const actor = userAfterEmail ?? user
 
   const hasInviteToken = Boolean(inviteToken)
   const firstCompletion = !prof?.account_setup_completed_at
 
-  if ((hasInviteToken || (firstCompletion && pendingInviteFlow)) && !password) {
+  if ((hasInviteToken || (firstCompletion && pendingInviteFlow)) && !orcidPrimary && !password) {
     return { error: 'Set a password before continuing with your invitation.' }
   }
 
@@ -116,21 +156,35 @@ export async function saveAccountSetup(formData: FormData) {
         resolved.kind === 'study'
           ? await acceptStudyInviteForUser(
               supabase,
-              user.id,
-              user.email ?? undefined,
+              actor.id,
+              actor.email ?? undefined,
               resolved.studyId,
               resolved.inviteId
             )
           : await acceptInstitutionInviteForUser(
               supabase,
-              user.id,
-              user.email ?? undefined,
+              actor.id,
+              actor.email ?? undefined,
               resolved.institutionId,
               resolved.inviteId
             )
 
       if (!acceptResult.ok) {
         return { error: acceptResult.error }
+      }
+
+      if (orcidPrimary) {
+        revalidatePath('/invites')
+        revalidatePath('/account/setup')
+        let dest =
+          resolved.kind === 'study'
+            ? `/studies/${resolved.studyId}`
+            : '/institutions'
+        if (orcidEmailRequiresSessionRefresh) {
+          const sep = dest.includes('?') ? '&' : '?'
+          dest = `${dest}${sep}orcid_session_refresh=1`
+        }
+        redirect(dest)
       }
 
       await supabase.auth.signOut()
@@ -150,5 +204,9 @@ export async function saveAccountSetup(formData: FormData) {
 
   revalidatePath('/invites')
   revalidatePath('/account/setup')
+  if (orcidEmailRequiresSessionRefresh) {
+    const sep = next.includes('?') ? '&' : '?'
+    redirect(`${next}${sep}orcid_session_refresh=1`)
+  }
   redirect(next)
 }

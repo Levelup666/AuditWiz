@@ -9,10 +9,45 @@ import { safeAppPath } from '@/lib/invites/safe-redirect'
 const inviteLinkNotice =
   'This sign-in link may have expired or was already used. Try signing in, or request a new invite.'
 
+type OrcidSyncResponse = {
+  needsEmailCapture?: boolean
+  requiresSessionRefresh?: boolean
+  emailSynced?: boolean
+}
+
 function hashLooksImplicit(): boolean {
   if (typeof window === 'undefined') return false
   const h = window.location.hash
   return h.length > 1 && h.includes('access_token=')
+}
+
+async function runOrcidPostAuth(
+  appClient: ReturnType<typeof createClient>,
+  next: string,
+  go: (path: string) => void
+) {
+  await fetch('/api/auth/sync-profile-metadata', { method: 'POST', credentials: 'same-origin' })
+  const orcidSyncRes = await fetch('/api/auth/sync-orcid-from-session', {
+    method: 'POST',
+    credentials: 'same-origin',
+  })
+  const orcidSync = orcidSyncRes.ok
+    ? ((await orcidSyncRes.json()) as OrcidSyncResponse)
+    : null
+
+  if (
+    orcidSync?.requiresSessionRefresh ||
+    orcidSync?.emailSynced
+  ) {
+    await appClient.auth.refreshSession()
+  }
+
+  if (orcidSync?.needsEmailCapture) {
+    const setupNext = encodeURIComponent(next)
+    go(`/account/setup?orcid_email_required=1&next=${setupNext}`)
+    return
+  }
+  go(next)
 }
 
 /**
@@ -47,9 +82,7 @@ function AuthCallbackContent() {
             go(`/auth/signin?inviteNotice=${encodeURIComponent(inviteLinkNotice)}`)
             return
           }
-          await fetch('/api/auth/sync-profile-metadata', { method: 'POST', credentials: 'same-origin' })
-          await fetch('/api/auth/sync-orcid-from-session', { method: 'POST', credentials: 'same-origin' })
-          go(next)
+          await runOrcidPostAuth(appClient, next, go)
           return
         }
 
@@ -79,7 +112,6 @@ function AuthCallbackContent() {
           return
         }
 
-        // After implicit parse, hash is cleared — first createClient() must not see #access_token or PKCE init throws.
         const appClient = createClient()
         const { error: setErr } = await appClient.auth.setSession({
           access_token: parsed.access_token,
@@ -92,9 +124,7 @@ function AuthCallbackContent() {
           return
         }
 
-        await fetch('/api/auth/sync-profile-metadata', { method: 'POST', credentials: 'same-origin' })
-        await fetch('/api/auth/sync-orcid-from-session', { method: 'POST', credentials: 'same-origin' })
-        go(next)
+        await runOrcidPostAuth(appClient, next, go)
       } catch {
         go('/auth/auth-code-error')
       }

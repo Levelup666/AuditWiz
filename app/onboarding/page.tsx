@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import InstitutionForm from '@/components/onboarding/institution-form'
+import { userNeedsOrcidEmailCapture } from '@/lib/auth/orcid-email-requirements'
 
 export default async function OnboardingPage() {
   const supabase = await createClient()
@@ -25,9 +26,13 @@ export default async function OnboardingPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('first_name, last_name')
+    .select('first_name, last_name, orcid_id, orcid_verified, orcid_email_locked')
     .eq('id', user.id)
     .maybeSingle()
+
+  if (userNeedsOrcidEmailCapture(user, profile)) {
+    redirect(`/account/setup?orcid_email_required=1&next=${encodeURIComponent('/onboarding')}`)
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
