@@ -4,6 +4,7 @@ import { generateHash } from '@/lib/crypto'
 import { isActiveInstitutionMember } from '@/lib/supabase/permissions'
 import { getStudyCollaborationPolicy } from '@/lib/study-institution-policy'
 import { getStudyRoleDefinitionIdBySlug } from '@/lib/supabase/study-roles'
+import { createAdminClient } from '@/lib/supabase/admin'
 import {
   activeStudyAssignmentCount,
   assertRoomForNewStudyParticipant,
@@ -88,7 +89,20 @@ export async function acceptStudyInviteForUser(
   }
 
   const roleSlug = String(invite.role ?? '').trim()
-  const defId = await getStudyRoleDefinitionIdBySlug(supabase, studyId, roleSlug)
+  if (!roleSlug) {
+    return { ok: false, status: 500, error: 'Study role is not configured' }
+  }
+
+  // Invitees are not study members yet; role definitions and assignment writes use service role after checks above.
+  let admin
+  try {
+    admin = createAdminClient()
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Server configuration error'
+    return { ok: false, status: 500, error: msg }
+  }
+
+  const defId = await getStudyRoleDefinitionIdBySlug(admin, studyId, roleSlug)
   if (!defId) {
     return { ok: false, status: 500, error: 'Study role is not configured' }
   }
@@ -116,7 +130,7 @@ export async function acceptStudyInviteForUser(
     }
   }
 
-  const { data: existingSame } = await supabase
+  const { data: existingSame } = await admin
     .from('study_member_role_assignments')
     .select('id')
     .eq('study_id', studyId)
@@ -129,14 +143,12 @@ export async function acceptStudyInviteForUser(
     return { ok: false, status: 409, error: 'You are already a member of this study' }
   }
 
-  const { error: insertError } = await supabase
-    .from('study_member_role_assignments')
-    .insert({
-      study_id: studyId,
-      user_id: userId,
-      role_definition_id: defId,
-      granted_by: invite.invited_by,
-    })
+  const { error: insertError } = await admin.from('study_member_role_assignments').insert({
+    study_id: studyId,
+    user_id: userId,
+    role_definition_id: defId,
+    granted_by: invite.invited_by,
+  })
 
   if (insertError) {
     if (insertError.code === '23505' || insertError.message.includes('At most two')) {
@@ -145,16 +157,24 @@ export async function acceptStudyInviteForUser(
     return { ok: false, status: 500, error: insertError.message }
   }
 
-  const { error: updateError } = await supabase
+  const nowIso = new Date().toISOString()
+  const { data: updatedInviteRows, error: updateError } = await admin
     .from('study_member_invites')
     .update({
-      accepted_at: new Date().toISOString(),
+      accepted_at: nowIso,
       accepted_by: userId,
     })
     .eq('id', invite.id)
+    .select('id')
 
-  if (updateError) {
-    return { ok: false, status: 500, error: updateError.message }
+  if (updateError || !updatedInviteRows?.length) {
+    return {
+      ok: false,
+      status: 500,
+      error:
+        updateError?.message ??
+        'Membership was created but the invite could not be marked accepted. Contact a study admin.',
+    }
   }
 
   const stateHash = await generateHash({

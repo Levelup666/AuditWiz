@@ -12,6 +12,7 @@ import {
 import { findOrcidAuthIdentity, isOrcidPrimaryAccount } from '@/lib/auth/is-orcid-auth'
 import { extractOrcidFromSupabaseIdentity } from '@/lib/auth/orcid-id'
 import { validateOrcidContactEmail } from '@/lib/auth/validate-orcid-email'
+import { syncVerifiedOrcidFromSession } from '@/lib/auth/sync-verified-orcid'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 
@@ -225,14 +226,34 @@ export async function setOrcidLockedEmailForUser(
       })
     : null
 
-  const { data: profile } = await supabase
+  let { data: profile } = await supabase
     .from('profiles')
     .select('orcid_id, orcid_verified, orcid_email_locked')
     .eq('id', user.id)
     .maybeSingle()
 
+  if ((!profile?.orcid_verified || !profile?.orcid_id) && orcidIdentity && orcidId) {
+    const syncResult = await syncVerifiedOrcidFromSession(supabase)
+    if (!syncResult.ok) {
+      return { ok: false, error: syncResult.error }
+    }
+    const refetch = await supabase
+      .from('profiles')
+      .select('orcid_id, orcid_verified, orcid_email_locked')
+      .eq('id', user.id)
+      .maybeSingle()
+    profile = refetch.data
+  }
+
   if (!profile?.orcid_verified || !profile.orcid_id) {
-    return { ok: false, error: 'Link and verify your ORCID before setting a contact email.' }
+    if (!orcidIdentity || !orcidId) {
+      return { ok: false, error: 'Link and verify your ORCID before setting a contact email.' }
+    }
+    return {
+      ok: false,
+      error:
+        'Could not link your ORCID to your profile. Sign out, sign in again with ORCID, then retry.',
+    }
   }
 
   if (!isOrcidPrimaryAccount(user, profile)) {

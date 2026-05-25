@@ -11,6 +11,8 @@ import StudyDocumentationCard from '@/components/studies/study-documentation-car
 import StudyTasksSection from '@/components/studies/study-tasks-section'
 import StudyAuditTrail from '@/components/studies/study-audit-trail'
 import { StudyContextHints } from '@/components/studies/study-scope-provider'
+import { StudyCreatedNotice } from '@/components/studies/study-created-notice'
+import { Suspense } from 'react'
 
 interface StudyPageProps {
   params: Promise<{ id: string }>
@@ -48,6 +50,9 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
 
   return (
     <div className="space-y-6">
+      <Suspense fallback={null}>
+        <StudyCreatedNotice />
+      </Suspense>
       {!studyIsActive && (
         <div
           className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"

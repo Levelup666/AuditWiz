@@ -1,6 +1,7 @@
 'use client'
 
 import { useFormStatus } from 'react-dom'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/lib/toast'
 import { Input } from '@/components/ui/input'
@@ -27,12 +28,30 @@ export default function NewStudyForm({
   institutions,
   preselectedInstitutionId,
 }: NewStudyFormProps) {
+  const router = useRouter()
+
   async function handleSubmit(formData: FormData) {
     const result = await createStudy(formData)
+
+    if (result && 'success' in result && result.success) {
+      toast.success(
+        'Study created',
+        `"${result.studyTitle}" was created. You are set up as study admin.`
+      )
+      router.push(`/studies/${result.studyId}?created=1`)
+      router.refresh()
+      return
+    }
+
     if (result?.error) {
+      const partial = 'studyId' in result && result.studyId
+      if (partial) {
+        toast.error('Study created with a setup issue', result.error)
+        router.push(`/studies/${result.studyId}`)
+        router.refresh()
+        return
+      }
       toast.error('Create study failed', result.error)
-    } else {
-      toast.success('Study created successfully')
     }
   }
 

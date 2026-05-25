@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 import { canCreateStudyInInstitution } from '@/lib/supabase/permissions'
-import { getStudyRoleDefinitionIdBySlug } from '@/lib/supabase/study-roles'
+import { bootstrapStudyCreatorAsAdmin } from '@/lib/supabase/bootstrap-study-creator'
 
 export async function createStudy(formData: FormData) {
   const supabase = await createClient()
@@ -59,23 +59,31 @@ export async function createStudy(formData: FormData) {
     return { error: studyError.message }
   }
 
-  const adminDefId = await getStudyRoleDefinitionIdBySlug(supabase, study.id, 'admin')
-  if (!adminDefId) {
-    return { error: 'Study roles are not ready yet. Try again in a moment.' }
+  const bootstrap = await bootstrapStudyCreatorAsAdmin(study.id, userId)
+  if (!bootstrap.ok) {
+    return {
+      error: bootstrap.error,
+      studyId: study.id,
+      studyTitle: title.trim(),
+    }
   }
 
-  const { error: assignError } = await supabase
-    .from('study_member_role_assignments')
-    .insert({
-      study_id: study.id,
-      user_id: userId,
-      role_definition_id: adminDefId,
-      granted_by: userId,
-    })
-
-  if (assignError) {
-    return { error: assignError.message }
-  }
+  const memberJoinedHash = await generateHash({
+    study_id: study.id,
+    user_id: userId,
+    role: 'admin',
+    source: 'study_created',
+  })
+  await createAuditEvent(
+    study.id,
+    userId,
+    'study_member_joined',
+    'study_member',
+    userId,
+    null,
+    memberJoinedHash,
+    { role: 'admin', source: 'study_created' }
+  )
 
   const newStateHash = await generateHash({
     study_id: study.id,
@@ -97,5 +105,11 @@ export async function createStudy(formData: FormData) {
   )
 
   revalidatePath('/studies')
-  redirect(`/studies/${study.id}`)
+  revalidatePath(`/studies/${study.id}`)
+
+  return {
+    success: true as const,
+    studyId: study.id,
+    studyTitle: title.trim(),
+  }
 }
