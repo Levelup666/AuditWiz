@@ -37,7 +37,7 @@ export default async function InstitutionsPage() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Institutions</h1>
         <p className="mt-2 text-gray-600">
-          Organizations you belong to. Create studies under an institution.
+          Organizations you belong to
         </p>
       </div>
 
@@ -45,7 +45,7 @@ export default async function InstitutionsPage() {
         <CardHeader>
           <CardTitle>Your Institutions</CardTitle>
           <CardDescription>
-            Institutions you are a member of. Admins can create studies and invite members.
+            Institutions you are a member of.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -54,7 +54,7 @@ export default async function InstitutionsPage() {
               <Building2 className="mx-auto h-12 w-12 text-muted-foreground" />
               <p className="mt-4 text-muted-foreground">No institutions yet</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                You will be prompted to create one when signing up, or accept an invite.
+                Accept an invite or create an institution to get started.
               </p>
               <Button asChild className="mt-4">
                 <Link href="/onboarding">

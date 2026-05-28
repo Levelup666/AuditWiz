@@ -71,7 +71,7 @@ export default async function InvitesPage() {
               Finish account setup
             </CardTitle>
             <CardDescription className="text-amber-900/80 dark:text-amber-200/90">
-              Set your password, legal name, and notification preferences. After that, use the
+              Set your password, name, and notification preferences. After that, use the
               buttons below to open each invite and accept it—you cannot join until setup is
               complete.
             </CardDescription>
@@ -86,10 +86,7 @@ export default async function InvitesPage() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Pending Invites</h1>
         <p className="mt-2 text-gray-600">
-          When you are signed in, <strong>accept study and institution invites here</strong>—you do
-          not need the original email link. Email links are most useful for people who still need to
-          create an account. New invitees may get an email from your Supabase Auth mailer (same as
-          sign-up confirmation); existing users may get a message via Resend if you configure it.
+          Accept study and institution invites here.
         </p>
       </div>
 

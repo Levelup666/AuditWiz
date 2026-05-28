@@ -23,16 +23,21 @@ export default function InvitesNavLink({
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/invites/summary')
-      .then((r) => r.json())
-      .then((d: { total?: number }) => {
-        if (!cancelled && typeof d.total === 'number') setTotal(d.total)
-      })
-      .catch(() => {})
+    const load = () => {
+      fetch('/api/invites/summary')
+        .then((r) => r.json())
+        .then((d: { total?: number }) => {
+          if (!cancelled && typeof d.total === 'number') setTotal(d.total)
+        })
+        .catch(() => {})
+    }
+    load()
+    window.addEventListener('invites-updated', load)
     return () => {
       cancelled = true
+      window.removeEventListener('invites-updated', load)
     }
-  }, [])
+  }, [pathname])
 
   const isActive = pathname?.startsWith('/invites')
 

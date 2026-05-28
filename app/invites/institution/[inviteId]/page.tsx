@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import AcceptInstitutionInviteButton from './accept-button'
+import DeclineInviteButton from '@/components/invites/decline-invite-button'
 
 interface PageProps {
   params: Promise<{ inviteId: string }>
@@ -141,9 +142,7 @@ export default async function AcceptInstitutionInvitePage({ params }: PageProps)
         </CardHeader>
         <CardContent className="flex gap-2">
           <AcceptInstitutionInviteButton inviteId={inviteId} institutionId={institution.id} role={invite.role} />
-          <Button variant="outline" asChild>
-            <Link href="/studies">Decline</Link>
-          </Button>
+          <DeclineInviteButton kind="institution" inviteId={inviteId} scopeId={institution.id} />
         </CardContent>
       </Card>
     </div>

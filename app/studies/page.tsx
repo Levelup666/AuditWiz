@@ -58,7 +58,7 @@ export default async function StudiesPage({ searchParams }: StudiesPageProps) {
           </Link>
         ) : (
           <Button variant="outline" asChild>
-            <Link href="/institutions">Institutions (admin required to create studies)</Link>
+            <Link href="/institutions">Back to Institutions</Link>
           </Button>
         )}
       </div>

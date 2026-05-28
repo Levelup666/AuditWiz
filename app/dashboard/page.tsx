@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { FolderOpen, FileText, ListTodo, Plus } from 'lucide-react'
+import { getDashboardMemberStats } from '@/lib/dashboard/member-stats'
 import { getRecentNotifications } from '@/lib/notifications'
 import NotificationsList from '@/components/dashboard/notifications-list'
 import { canUserCreateStudy } from '@/lib/supabase/permissions'
@@ -21,20 +22,9 @@ export default async function DashboardPage() {
 
   const notifications = await getRecentNotifications(userId, 10)
   const showNewStudy = await canUserCreateStudy(userId)
-
-  const { count: studiesCount } = await supabase
-    .from('studies')
-    .select('*', { count: 'exact', head: true })
-
-  const { count: recordsCount } = await supabase
-    .from('records')
-    .select('*', { count: 'exact', head: true })
-
-  const { count: myOpenTasksCount, error: openTasksCountError } = await supabase
-    .from('study_tasks')
-    .select('id, study_task_assignees!inner(user_id)', { count: 'exact', head: true })
-    .eq('status', 'open')
-    .eq('study_task_assignees.user_id', userId)
+  const { studiesCount, recordsCount, myOpenTasksCount, errors: statsErrors } =
+    await getDashboardMemberStats(supabase, userId)
+  const openTasksCountError = statsErrors.openTasks
 
   return (
     <div className="space-y-6">
@@ -67,7 +57,9 @@ export default async function DashboardPage() {
             <FolderOpen className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{studiesCount ?? 0}</div>
+            <div className="text-2xl font-bold">
+              {statsErrors.studies ? '—' : studiesCount}
+            </div>
             <p className="text-xs text-muted-foreground">
               Studies you can access
             </p>
@@ -87,7 +79,7 @@ export default async function DashboardPage() {
           <CardContent>
             <div className="text-2xl font-bold">{recordsCount ?? 0}</div>
             <p className="text-xs text-muted-foreground">
-              Records visible to you across studies
+              Records you can access across studies
             </p>
           </CardContent>
         </Card>
@@ -99,10 +91,10 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {openTasksCountError ? '—' : (myOpenTasksCount ?? 0)}
+              {openTasksCountError ? '—' : myOpenTasksCount}
             </div>
             <p className="text-xs text-muted-foreground">
-              Assigned to you in studies
+              Open tasks assigned to you in your studies
             </p>
             <Link href="/studies" className="mt-4 block">
               <Button variant="outline" size="sm" className="w-full">

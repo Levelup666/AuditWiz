@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/lib/toast'
+import { notifyInvitesChanged } from '@/lib/invites/notify-invites-changed'
 import { createClient } from '@/lib/supabase/client'
 
 type InviteActionsProps = {
@@ -46,6 +47,7 @@ export default function InviteActions({ rawToken, canAccept }: InviteActionsProp
     try {
       const data = await postJson('/api/invites/accept')
       toast.success('Invitation accepted')
+      notifyInvitesChanged()
       if (data.kind === 'study' && data.study_id) {
         router.push(`/studies/${data.study_id}`)
       } else if (data.kind === 'institution' && data.institution_id) {
@@ -77,7 +79,8 @@ export default function InviteActions({ rawToken, canAccept }: InviteActionsProp
     try {
       await postJson('/api/invites/decline')
       toast.success('Invitation declined')
-      router.push('/studies')
+      notifyInvitesChanged()
+      router.push('/invites')
       router.refresh()
     } catch (e) {
       toast.error('Could not decline', e instanceof Error ? e.message : 'Failed')

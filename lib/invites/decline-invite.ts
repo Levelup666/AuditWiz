@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAuditEventWithClient } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
+import { declineInstitutionInviteForUser } from '@/lib/invites/decline-institution'
+import { declineStudyInviteForUser } from '@/lib/invites/decline-study'
 import type { ResolvedInvite } from '@/lib/invites/lookup-invite-by-token'
 
 export type DeclineInviteResult =
@@ -59,34 +61,52 @@ export async function declineInviteByTokenForUser(
     return { ok: false, status: 410, error: 'Invite has expired' }
   }
 
-  const table =
-    resolved.kind === 'study'
-      ? 'study_member_invites'
-      : resolved.kind === 'institution'
-        ? 'institution_invites'
-        : 'audit_engagements'
-  const targetEntityType =
-    resolved.kind === 'study'
-      ? 'study_member_invite'
-      : resolved.kind === 'institution'
-        ? 'institution_invite'
-        : 'audit_engagement'
-  const now = new Date().toISOString()
-  const { error: upErr } = await admin
-    .from(table)
-    .update({
-      revoked_at: now,
-      ...(resolved.kind === 'audit_engagement'
-        ? { revocation_reason: 'declined_by_invitee' }
-        : {}),
-    })
-    .eq('id', resolved.inviteId)
-
-  if (upErr) {
-    return { ok: false, status: 500, error: upErr.message }
+  if (resolved.kind === 'study') {
+    return declineStudyInviteForUser(
+      supabase,
+      admin,
+      userId,
+      userEmail,
+      resolved.studyId,
+      resolved.inviteId
+    )
   }
 
-  const studyId = resolved.kind === 'study' ? resolved.studyId : null
+  if (resolved.kind === 'institution') {
+    return declineInstitutionInviteForUser(
+      supabase,
+      admin,
+      userId,
+      userEmail,
+      resolved.institutionId,
+      resolved.inviteId
+    )
+  }
+
+  if (resolved.kind !== 'audit_engagement') {
+    return { ok: false, status: 500, error: 'Unsupported invite kind' }
+  }
+
+  const now = new Date().toISOString()
+  const { data: updatedRows, error: upErr } = await admin
+    .from('audit_engagements')
+    .update({
+      revoked_at: now,
+      revocation_reason: 'declined_by_invitee',
+    })
+    .eq('id', resolved.inviteId)
+    .is('accepted_at', null)
+    .is('revoked_at', null)
+    .select('id')
+
+  if (upErr || !updatedRows?.length) {
+    return {
+      ok: false,
+      status: 500,
+      error: upErr?.message ?? 'Could not decline invite',
+    }
+  }
+
   const stateHash = await generateHash({
     invite_id: resolved.inviteId,
     kind: resolved.kind,
@@ -94,26 +114,20 @@ export async function declineInviteByTokenForUser(
     declined_by: userId,
   })
 
-  const metadata: Record<string, unknown> = { kind: resolved.kind }
-  if (resolved.kind === 'study') {
-    metadata.study_id = resolved.studyId
-  } else if (resolved.kind === 'institution') {
-    metadata.institution_id = resolved.institutionId
-  } else {
-    metadata.institution_id = resolved.institutionId
-    metadata.engagement_id = resolved.inviteId
-  }
-
   await createAuditEventWithClient(
     admin,
-    studyId,
+    null,
     userId,
     'invite_rejected',
-    targetEntityType,
+    'audit_engagement',
     resolved.inviteId,
     null,
     stateHash,
-    metadata
+    {
+      kind: resolved.kind,
+      institution_id: resolved.institutionId,
+      engagement_id: resolved.inviteId,
+    }
   )
 
   return { ok: true }

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/lib/toast'
+import { notifyInvitesChanged } from '@/lib/invites/notify-invites-changed'
 
 interface AcceptInstitutionInviteButtonProps {
   inviteId: string
@@ -39,6 +40,7 @@ export default function AcceptInstitutionInviteButton({
       }
       if (!res.ok) throw new Error(data.error || res.statusText)
       toast.success('Invite accepted')
+      notifyInvitesChanged()
       router.push(`/institutions/${institutionId}`)
       router.refresh()
     } catch (e) {

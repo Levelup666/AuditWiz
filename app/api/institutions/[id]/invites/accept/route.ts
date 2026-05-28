@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { acceptInstitutionInviteForUser } from '@/lib/invites/accept-institution'
 
@@ -69,6 +70,9 @@ export async function POST(
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status })
   }
+
+  revalidatePath('/invites')
+  revalidatePath(`/invites/institution/${inviteId}`)
 
   return NextResponse.json({ success: true })
 }

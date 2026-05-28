@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { hashInviteToken } from '@/lib/invites/token'
@@ -39,6 +40,15 @@ export async function POST(request: NextRequest) {
 
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status })
+  }
+
+  revalidatePath('/invites')
+  if (resolved.kind === 'study') {
+    revalidatePath(`/invites/study/${resolved.inviteId}`)
+    revalidatePath(`/studies/${resolved.studyId}`)
+  } else if (resolved.kind === 'institution') {
+    revalidatePath(`/invites/institution/${resolved.inviteId}`)
+    revalidatePath(`/institutions/${resolved.institutionId}`)
   }
 
   return NextResponse.json({ success: true })
