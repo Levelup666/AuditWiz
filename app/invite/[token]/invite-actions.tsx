@@ -3,6 +3,8 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { AsyncStatusLine } from '@/components/ui/async-status-line'
+import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
 import { toast } from '@/lib/toast'
 import { notifyInvitesChanged } from '@/lib/invites/notify-invites-changed'
 import { createClient } from '@/lib/supabase/client'
@@ -98,15 +100,39 @@ export default function InviteActions({ rawToken, canAccept }: InviteActionsProp
     router.refresh()
   }
 
+  const statusMessage =
+    loading === 'accept'
+      ? 'Processing your acceptance…'
+      : loading === 'decline'
+        ? 'Declining invitation…'
+        : null
+
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+    <div className="space-y-3">
+      <AsyncStatusLine message={statusMessage} />
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
       {canAccept && (
         <>
-          <Button onClick={handleAccept} disabled={loading !== null}>
-            {loading === 'accept' ? 'Accepting…' : 'Accept invite'}
+          <Button
+            type="button"
+            onClick={handleAccept}
+            disabled={loading !== null}
+            aria-busy={loading === 'accept'}
+          >
+            <ButtonLoadingLabel loading={loading === 'accept'} loadingLabel="Accepting…">
+              Accept invite
+            </ButtonLoadingLabel>
           </Button>
-          <Button variant="outline" onClick={handleDecline} disabled={loading !== null}>
-            {loading === 'decline' ? 'Declining…' : 'Decline'}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDecline}
+            disabled={loading !== null}
+            aria-busy={loading === 'decline'}
+          >
+            <ButtonLoadingLabel loading={loading === 'decline'} loadingLabel="Declining…">
+              Decline
+            </ButtonLoadingLabel>
           </Button>
         </>
       )}
@@ -115,6 +141,7 @@ export default function InviteActions({ rawToken, canAccept }: InviteActionsProp
           Sign out and use a different account
         </Button>
       )}
+      </div>
     </div>
   )
 }

@@ -3,8 +3,8 @@ import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import AcceptStudyInviteButton from './accept-button'
-import DeclineInviteButton from '@/components/invites/decline-invite-button'
+import InviteDecisionActions from '@/components/invites/invite-decision-actions'
+import { formatStudyRoleLabel } from '@/lib/study-role-display'
 
 interface PageProps {
   params: Promise<{ inviteId: string }>
@@ -113,12 +113,11 @@ export default async function AcceptStudyInvitePage({ params }: PageProps) {
         <CardHeader>
           <CardTitle>Join {study.title}</CardTitle>
           <CardDescription>
-            You have been invited to join this study as a {invite.role}. Accept to get access.
+            You have been invited to join this study as {formatStudyRoleLabel(invite.role)}. Accept to get access.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex gap-2">
-          <AcceptStudyInviteButton inviteId={inviteId} studyId={invite.study_id} />
-          <DeclineInviteButton kind="study" inviteId={inviteId} scopeId={invite.study_id} />
+        <CardContent>
+          <InviteDecisionActions kind="study" inviteId={inviteId} scopeId={invite.study_id} />
         </CardContent>
       </Card>
     </div>

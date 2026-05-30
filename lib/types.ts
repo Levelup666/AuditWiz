@@ -1,7 +1,7 @@
 // Clinical-Ready Research Platform Types
 // Study-scoped roles and immutable record architecture
 
-export type StudyRole = 'creator' | 'reviewer' | 'approver' | 'auditor' | 'admin';
+export type StudyRole = 'member' | 'reviewer' | 'approver' | 'auditor' | 'admin';
 
 export type StudyStatus = 'draft' | 'active' | 'completed' | 'archived';
 
@@ -16,6 +16,7 @@ export type AuditActionType =
   | 'institution_created' | 'institution_updated' | 'institution_deleted'
   | 'institution_member_added' | 'institution_member_removed' | 'institution_member_role_changed'
   | 'institution_member_invited' | 'institution_member_joined'
+  | 'institution_member_title_updated'
   | 'record_created' | 'record_submitted' | 'record_amended' | 'record_rejected' | 'record_approved'
   | 'record_draft_updated' | 'record_deleted'
   | 'document_uploaded' | 'document_deleted'
@@ -29,7 +30,8 @@ export type AuditActionType =
   | 'study_task_created' | 'study_task_updated' | 'study_task_cancelled' | 'study_task_completed'
   | 'audit_engagement_granted' | 'audit_engagement_accepted' | 'audit_engagement_revoked'
   | 'audit_engagement_extended' | 'audit_engagement_expired'
-  | 'audit_engagement_accessed' | 'audit_engagement_export';
+  | 'audit_engagement_accessed' | 'audit_engagement_export'
+  | 'password_changed' | 'password_rotation_preference_updated';
 
 export interface Institution {
   id: string;
@@ -49,6 +51,7 @@ export interface InstitutionMember {
   institution_id: string;
   user_id: string;
   role: 'admin' | 'member';
+  title: string | null;
   granted_by: string | null;
   granted_at: string;
   revoked_at: string | null;

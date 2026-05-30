@@ -4,11 +4,13 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
+import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import Link from 'next/link'
 import { toast } from '@/lib/toast'
 import { upsertProfileNamesAfterSignup } from '@/app/auth/actions'
+import { getPasswordStrengthLabel, validatePassword } from '@/lib/auth/password-policy'
 import { OrcidOAuthButton } from '@/components/auth/orcid-oauth-button'
 
 export default function SignUpForm({
@@ -35,8 +37,9 @@ export default function SignUpForm({
       return
     }
 
-    if (password.length < 6) {
-      toast.error('Validation error', 'Password must be at least 6 characters')
+    const pwdCheck = validatePassword(password, { email })
+    if (!pwdCheck.ok) {
+      toast.error('Validation error', pwdCheck.errors[0] ?? 'Password does not meet requirements.')
       return
     }
 
@@ -155,7 +158,15 @@ export default function SignUpForm({
             onChange={(e) => setPassword(e.target.value)}
             className="mt-1"
           />
-          <p className="mt-1 text-xs text-gray-500">Must be at least 6 characters</p>
+          {password ? (
+            <p className="mt-1 text-xs text-gray-500">
+              Strength: {getPasswordStrengthLabel(password) ?? '—'} · At least 12 characters
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-gray-500">
+              At least 12 characters; avoid common passwords and your email address.
+            </p>
+          )}
         </div>
         <div>
           <Label htmlFor="confirmPassword">Confirm Password</Label>
@@ -173,8 +184,10 @@ export default function SignUpForm({
       </div>
 
       <div>
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? 'Creating account...' : 'Sign up'}
+        <Button type="submit" className="w-full" disabled={loading} aria-busy={loading}>
+          <ButtonLoadingLabel loading={loading} loadingLabel="Creating account…">
+            Sign up
+          </ButtonLoadingLabel>
         </Button>
       </div>
 

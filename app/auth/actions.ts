@@ -13,5 +13,16 @@ export async function upsertProfileNamesAfterSignup(first_name: string, last_nam
     return { error: 'Not signed in' }
   }
 
-  return upsertProfileLegalNames(supabase, user.id, first_name, last_name)
+  const nameRes = await upsertProfileLegalNames(supabase, user.id, first_name, last_name)
+  if (nameRes.error) {
+    return nameRes
+  }
+
+  const nowIso = new Date().toISOString()
+  await supabase
+    .from('profiles')
+    .update({ password_last_changed_at: nowIso })
+    .eq('id', user.id)
+
+  return { error: null }
 }

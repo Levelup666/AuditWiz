@@ -37,6 +37,7 @@ export const ACTION_BADGE_STYLES: Record<string, string> = {
   institution_member_added: 'bg-green-100 text-green-800',
   institution_member_removed: 'bg-red-100 text-red-800',
   institution_member_role_changed: 'bg-yellow-100 text-yellow-800',
+  institution_member_title_updated: 'bg-yellow-100 text-yellow-800',
   institution_member_invited: 'bg-amber-100 text-amber-800',
   institution_member_joined: 'bg-green-100 text-green-800',
   record_created: 'bg-blue-100 text-blue-800',
@@ -63,6 +64,8 @@ export const ACTION_BADGE_STYLES: Record<string, string> = {
   audit_engagement_expired: 'bg-gray-100 text-gray-700',
   audit_engagement_accessed: 'bg-sky-100 text-sky-800',
   audit_engagement_export: 'bg-violet-100 text-violet-800',
+  password_changed: 'bg-slate-100 text-slate-800',
+  password_rotation_preference_updated: 'bg-slate-100 text-slate-800',
 }
 
 export function formatActionType(actionType: string): string {

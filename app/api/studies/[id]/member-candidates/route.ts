@@ -10,6 +10,7 @@ export type StudyMemberCandidate = {
   email: string
   display_name: string | null
   member_display_name: string
+  institution_title: string | null
   orcid_id: string | null
 }
 
@@ -69,17 +70,11 @@ export async function GET(
     return NextResponse.json({ error: smErr.message }, { status: 500 })
   }
 
-  const assignmentCountByUser = new Map<string, number>()
-  for (const r of studyRows ?? []) {
-    assignmentCountByUser.set(
-      r.user_id,
-      (assignmentCountByUser.get(r.user_id) ?? 0) + 1
-    )
-  }
+  const onStudyUserIds = new Set((studyRows ?? []).map((r) => r.user_id))
 
   const { data: instRows, error: imErr } = await admin
     .from('institution_members')
-    .select('user_id')
+    .select('user_id, title')
     .eq('institution_id', study.institution_id)
     .is('revoked_at', null)
 
@@ -90,8 +85,7 @@ export async function GET(
   const candidates: StudyMemberCandidate[] = []
 
   for (const row of instRows ?? []) {
-    const ac = assignmentCountByUser.get(row.user_id) ?? 0
-    if (ac >= 2) continue
+    if (onStudyUserIds.has(row.user_id)) continue
 
     const { data: profile } = await admin
       .from('profiles')
@@ -116,6 +110,7 @@ export async function GET(
       email: email || 'Email unavailable',
       display_name: profile?.display_name ?? null,
       member_display_name,
+      institution_title: row.title?.trim() || null,
       orcid_id: profile?.orcid_id ?? null,
     })
   }

@@ -10,6 +10,12 @@ import { userHasUsableAuthEmail } from '@/lib/auth/orcid-email'
 import { clearPendingOrcidContactEmail } from '@/lib/auth/pending-orcid-contact-email'
 import { OrcidContactEmailField } from '@/components/account/orcid-contact-email-field'
 import { Loader2 } from 'lucide-react'
+import PasswordRotationPreference from '@/components/account/password-rotation-preference'
+import {
+  getPasswordStrengthLabel,
+  validatePassword,
+  type PasswordRotationDays,
+} from '@/lib/auth/password-policy'
 
 interface AccountSetupFormProps {
   nextPath: string
@@ -33,6 +39,8 @@ interface AccountSetupFormProps {
   initialNickname: string | null
   initialEmailInvites: boolean
   initialEmailStudy: boolean
+  passwordPolicyLegacy?: boolean
+  initialRotationDays?: number | null
 }
 
 export default function AccountSetupForm({
@@ -52,10 +60,21 @@ export default function AccountSetupForm({
   initialNickname,
   initialEmailInvites,
   initialEmailStudy,
+  passwordPolicyLegacy = false,
+  initialRotationDays = null,
 }: AccountSetupFormProps) {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [rotationDays, setRotationDays] = useState<PasswordRotationDays | ''>(() => {
+    if (initialRotationDays === 30 || initialRotationDays === 60 || initialRotationDays === 90) {
+      return initialRotationDays
+    }
+    return ''
+  })
   const [pending, setPending] = useState(false)
+
+  const showPasswordPolicyExtras = !orcidPrimary && !passwordPolicyLegacy
+  const passwordStrength = getPasswordStrengthLabel(password)
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -95,12 +114,23 @@ export default function AccountSetupForm({
     }
 
     if (pwd || confirm) {
-      if (pwd.length < 8) {
-        toast.error('Password', 'Use at least 8 characters.')
-        return
-      }
       if (pwd !== confirm) {
         toast.error('Password', 'Passwords do not match.')
+        return
+      }
+      const check = validatePassword(pwd, { email: userEmail })
+      if (!check.ok) {
+        toast.error('Password', check.errors[0] ?? 'Password does not meet requirements.')
+        return
+      }
+    }
+
+    if (showPasswordPolicyExtras && !initialRotationDays) {
+      if (!rotationDays) {
+        toast.error(
+          'Password interval',
+          'Choose how often you want to change your password (30, 60, or 90 days).'
+        )
         return
       }
     }
@@ -111,6 +141,9 @@ export default function AccountSetupForm({
       fd.set('next', nextPath)
       fd.set('password', pwd)
       fd.set('confirm_password', confirm)
+      if (rotationDays) {
+        fd.set('password_rotation_days', String(rotationDays))
+      }
       const result = await saveAccountSetup(fd)
       if (result?.error) {
         toast.error('Could not save preferences', result.error)
@@ -258,8 +291,20 @@ export default function AccountSetupForm({
                 autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="At least 12 characters"
               />
+              {password ? (
+                <p className="text-xs text-muted-foreground">
+                  Strength: {passwordStrength ?? '—'}
+                  {showPasswordPolicyExtras
+                    ? ' · Use 12+ characters and avoid common words or your email.'
+                    : null}
+                </p>
+              ) : showPasswordPolicyExtras ? (
+                <p className="text-xs text-muted-foreground">
+                  At least 12 characters; avoid common passwords and your email address.
+                </p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirm_password">Confirm password</Label>
@@ -274,6 +319,17 @@ export default function AccountSetupForm({
               />
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {showPasswordPolicyExtras && !initialRotationDays ? (
+        <div className="space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm">
+          <PasswordRotationPreference
+            value={rotationDays}
+            onChange={setRotationDays}
+            required
+            disabled={pending}
+          />
         </div>
       ) : null}
 

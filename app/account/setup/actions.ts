@@ -17,6 +17,15 @@ import {
   userNeedsOrcidEmailInput,
 } from '@/lib/auth/orcid-email-requirements'
 import { userHasUsableAuthEmail } from '@/lib/auth/orcid-email'
+import {
+  parseRotationDays,
+  userSubjectToPasswordPolicy,
+  validatePassword,
+} from '@/lib/auth/password-policy'
+import {
+  auditPasswordChanged,
+  auditPasswordRotationPreferenceUpdated,
+} from '@/lib/auth/password-audit'
 
 function safeNextPath(next: string | null | undefined): string {
   return safeAppPath(next, '/invites')
@@ -46,10 +55,12 @@ export async function saveAccountSetup(formData: FormData) {
   const password = (formData.get('password') as string)?.trim() || ''
   const confirmPassword = (formData.get('confirm_password') as string)?.trim() || ''
 
+  const rotationDaysRaw = formData.get('password_rotation_days')
+
   const { data: prof } = await supabase
     .from('profiles')
     .select(
-      'id, account_setup_completed_at, first_name, last_name, orcid_id, orcid_verified, orcid_email_locked'
+      'id, account_setup_completed_at, first_name, last_name, orcid_id, orcid_verified, orcid_email_locked, password_policy_legacy, password_rotation_days, password_last_changed_at'
     )
     .eq('id', user.id)
     .maybeSingle()
@@ -98,17 +109,32 @@ export async function saveAccountSetup(formData: FormData) {
     }
   }
 
+  const subjectToPolicy = userSubjectToPasswordPolicy(actor, prof)
+  const rotationDaysParsed = parseRotationDays(rotationDaysRaw)
+
   if (password || confirmPassword) {
-    if (password.length < 8) {
-      return { error: 'Use at least 8 characters for your password.' }
-    }
     if (password !== confirmPassword) {
       return { error: 'Passwords do not match.' }
+    }
+    const check = validatePassword(password, { email: actor.email })
+    if (!check.ok) {
+      return { error: check.errors[0] ?? 'Password does not meet requirements.' }
     }
 
     const { error: passwordError } = await supabase.auth.updateUser({ password })
     if (passwordError) {
       return { error: `Password update failed: ${passwordError.message}` }
+    }
+    if (subjectToPolicy) {
+      await auditPasswordChanged(actor.id)
+    }
+  }
+
+  if (subjectToPolicy && !prof?.password_rotation_days) {
+    if (!rotationDaysParsed) {
+      return {
+        error: 'Choose how often you want to change your password (30, 60, or 90 days).',
+      }
     }
   }
 
@@ -125,14 +151,24 @@ export async function saveAccountSetup(formData: FormData) {
     nickname,
   })
 
-  const payload = {
+  const nowIso = new Date().toISOString()
+  const payload: Record<string, unknown> = {
     first_name,
     last_name,
     nickname,
     display_name,
     notification_email_invites: emailInvites,
     notification_email_study_activity: emailStudy,
-    account_setup_completed_at: new Date().toISOString(),
+    account_setup_completed_at: nowIso,
+  }
+
+  if (subjectToPolicy && rotationDaysParsed && !prof?.password_rotation_days) {
+    payload.password_rotation_days = rotationDaysParsed
+    await auditPasswordRotationPreferenceUpdated(actor.id, rotationDaysParsed, null)
+  }
+
+  if (subjectToPolicy && (password || rotationDaysParsed) && !prof?.password_last_changed_at) {
+    payload.password_last_changed_at = nowIso
   }
 
   const { error } = prof?.id

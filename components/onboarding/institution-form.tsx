@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -187,8 +188,10 @@ export default function InstitutionForm({
         </p>
       </div>
       <div className="flex gap-2">
-        <Button type="submit" disabled={pending}>
-          {pending ? 'Creating…' : 'Create institution'}
+        <Button type="submit" disabled={pending} aria-busy={pending}>
+          <ButtonLoadingLabel loading={pending} loadingLabel="Creating…">
+            Create institution
+          </ButtonLoadingLabel>
         </Button>
       </div>
     </form>

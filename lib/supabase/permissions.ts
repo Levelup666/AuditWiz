@@ -1,4 +1,4 @@
-// Study-scoped permission checking — merges all active role assignments (max 2 per user per study).
+// Study-scoped permission checking — one active role assignment per user per study.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from './server'
@@ -52,9 +52,9 @@ async function loadRoleDefinitionsForAssignments(
 }
 
 export interface StudyMemberPermissions {
-  /** All active role slugs for this user in the study (e.g. reviewer+auditor). */
+  /** Active role slug for this user in the study. */
   roles: string[]
-  /** Primary slug for display / backward compatibility (lowest sort_order). */
+  /** Same as roles[0]; kept for backward compatibility in callers. */
   role: StudyRole | string
   can_view: boolean
   can_comment: boolean
@@ -100,7 +100,7 @@ function mergeDefinitions(defs: StudyRoleDefinitionRow[]): Omit<StudyMemberPermi
 }
 
 /**
- * Effective permissions = OR of all active role definitions for this user in the study.
+ * Effective permissions from the user's active role on the study.
  */
 export async function getStudyMemberPermissions(
   userId: string,
@@ -139,7 +139,7 @@ export function hasStudyRoleSlug(
 }
 
 /**
- * True if any merged role slug matches the legacy StudyRole set.
+ * True if the user's role slug matches one of the required slugs.
  */
 export async function hasStudyRole(
   userId: string,

@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getStudyMemberPermissions } from '@/lib/supabase/permissions'
 import StudyScopeProvider, {
-  StudyActingAsBar,
   type StudyScopeCaps,
   type StudyScopeInitial,
 } from '@/components/studies/study-scope-provider'
@@ -45,7 +44,6 @@ export default async function StudyIdLayout({
 
   return (
     <StudyScopeProvider studyId={studyId} initial={initial}>
-      <StudyActingAsBar />
       {children}
     </StudyScopeProvider>
   )

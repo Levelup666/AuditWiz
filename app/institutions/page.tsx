@@ -21,6 +21,7 @@ export default async function InstitutionsPage() {
     .select(`
       id,
       role,
+      title,
       institution:institutions(id, name, slug, description, metadata)
     `)
     .eq('user_id', user.id)
@@ -30,6 +31,7 @@ export default async function InstitutionsPage() {
   const institutions = (memberships ?? []).map((m: any) => ({
     ...m.institution,
     role: m.role,
+    memberTitle: m.title as string | null,
   }))
 
   return (
@@ -96,7 +98,10 @@ export default async function InstitutionsPage() {
                     {inst.description && (
                       <p className="text-sm text-muted-foreground mt-1">{inst.description}</p>
                     )}
-                    <p className="text-xs text-muted-foreground mt-1">Your role: {inst.role}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Your role: {inst.role}
+                      {inst.memberTitle?.trim() ? ` · ${inst.memberTitle.trim()}` : ''}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button asChild variant="outline" size="sm">

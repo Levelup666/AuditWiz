@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Mail } from 'lucide-react'
+import { formatStudyRoleLabel } from '@/lib/study-role-display'
 
 export default async function InvitesPage() {
   const supabase = await createClient()
@@ -149,7 +150,8 @@ export default async function InvitesPage() {
                       <div>
                         <p className="font-medium">{study?.title ?? 'Study'}</p>
                         <p className="text-sm text-muted-foreground">
-                          Role: {inv.role} · Expires {new Date(inv.expires_at).toLocaleDateString()}
+                          Role: {formatStudyRoleLabel(inv.role)} · Expires{' '}
+                          {new Date(inv.expires_at).toLocaleDateString()}
                         </p>
                       </div>
                       <Button asChild>

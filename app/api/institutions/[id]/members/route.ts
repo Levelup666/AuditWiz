@@ -36,7 +36,7 @@ export async function GET(
 
   const { data: members, error } = await supabase
     .from('institution_members')
-    .select('id, user_id, role, granted_at, granted_by')
+    .select('id, user_id, role, title, granted_at, granted_by')
     .eq('institution_id', institutionId)
     .is('revoked_at', null)
     .order('granted_at', { ascending: false })
@@ -116,10 +116,11 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => ({}))
-  const { memberId, revoked, role, confirmStudyAccessRevocation } = body as {
+  const { memberId, revoked, role, title, confirmStudyAccessRevocation } = body as {
     memberId?: string
     revoked?: boolean
     role?: string
+    title?: string | null
     confirmStudyAccessRevocation?: boolean
   }
 
@@ -128,16 +129,18 @@ export async function PATCH(
       ? role
       : null
 
-  if (!memberId || (revoked !== true && !nextRole)) {
+  const hasTitleUpdate = title !== undefined
+
+  if (!memberId || (revoked !== true && !nextRole && !hasTitleUpdate)) {
     return NextResponse.json(
-      { error: 'memberId and either revoked: true or role required' },
+      { error: 'memberId and revoked, role, or title required' },
       { status: 400 }
     )
   }
 
   const { data: member, error: fetchError } = await supabase
     .from('institution_members')
-    .select('id, user_id, role')
+    .select('id, user_id, role, title')
     .eq('id', memberId)
     .eq('institution_id', institutionId)
     .is('revoked_at', null)
@@ -145,6 +148,55 @@ export async function PATCH(
 
   if (fetchError || !member) {
     return NextResponse.json({ error: 'Member not found' }, { status: 404 })
+  }
+
+  if (hasTitleUpdate) {
+    const raw = title === null ? '' : String(title)
+    const trimmed = raw.trim()
+    const nextTitle = trimmed.length === 0 ? null : trimmed
+    if (nextTitle !== null && nextTitle.length > 120) {
+      return NextResponse.json({ error: 'Title must be at most 120 characters' }, { status: 400 })
+    }
+    const previousTitle = member.title?.trim() || null
+    if (previousTitle === nextTitle) {
+      return NextResponse.json({ success: true, unchanged: true })
+    }
+
+    const { error: titleError } = await supabase
+      .from('institution_members')
+      .update({ title: nextTitle })
+      .eq('id', memberId)
+      .eq('institution_id', institutionId)
+      .is('revoked_at', null)
+
+    if (titleError) {
+      return NextResponse.json({ error: titleError.message }, { status: 500 })
+    }
+
+    const stateHash = await generateHash({
+      institution_id: institutionId,
+      user_id: member.user_id,
+      previous_title: previousTitle,
+      next_title: nextTitle,
+      changed_by: user.id,
+    })
+
+    await createAuditEvent(
+      null,
+      user.id,
+      'institution_member_title_updated',
+      'institution_member',
+      member.user_id,
+      null,
+      stateHash,
+      {
+        institution_id: institutionId,
+        title: nextTitle,
+        title_set: nextTitle !== null,
+      }
+    )
+
+    return NextResponse.json({ success: true })
   }
 
   if (nextRole) {

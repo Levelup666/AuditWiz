@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { canManageStudyMembers } from '@/lib/supabase/permissions'
 import { acceptStudyInviteForUser } from '@/lib/invites/accept-study'
 
-const VALID_ROLES = ['creator', 'reviewer', 'approver', 'auditor', 'admin'] as const
+const VALID_ROLES = ['member', 'reviewer', 'approver', 'auditor', 'admin'] as const
 
 /** GET: list pending invites for the study (admins only) */
 export async function GET(

@@ -13,6 +13,7 @@ import { getActorEmailsForAudit } from '@/lib/audit/get-actor-emails'
 import { SYSTEM_ACTOR_ID } from '@/lib/types'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { resolveMemberDisplayName } from '@/lib/profile/resolve-member-display'
+import InstitutionMemberIdentity from '@/components/institutions/institution-member-identity'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -93,7 +94,7 @@ export default async function InstitutionDashboardPage({ params }: PageProps) {
 
   const { data: institutionMembers, error: membersError } = await supabase
     .from('institution_members')
-    .select('id, user_id, role, granted_at')
+    .select('id, user_id, role, title, granted_at')
     .eq('institution_id', id)
     .is('revoked_at', null)
     .order('granted_at', { ascending: false })
@@ -133,6 +134,8 @@ export default async function InstitutionDashboardPage({ params }: PageProps) {
     return {
       id: m.id,
       user_id: m.user_id,
+      role: m.role as string,
+      title: m.title as string | null,
       email,
       display_name: resolveMemberDisplayName(profile, memberMetadataByUserId[m.user_id], email),
     }
@@ -332,10 +335,16 @@ export default async function InstitutionDashboardPage({ params }: PageProps) {
               {membersForDisplay.map((member) => (
                 <div
                   key={member.id}
-                  className="flex items-center justify-between rounded-lg border p-3"
+                  className="flex items-center justify-between gap-3 rounded-lg border p-3"
                 >
-                  <p className="font-medium">{member.display_name ?? member.email}</p>
-                  <p className="text-sm text-muted-foreground">{member.email}</p>
+                  <InstitutionMemberIdentity
+                    displayName={member.display_name}
+                    email={member.email}
+                    title={member.title}
+                  />
+                  <Badge variant="outline" className="shrink-0 capitalize">
+                    {member.role}
+                  </Badge>
                 </div>
               ))}
             </div>

@@ -49,7 +49,7 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
   const { data: profile } = await supabase
     .from('profiles')
     .select(
-      'first_name, last_name, nickname, orcid_id, orcid_verified, orcid_email_locked, notification_email_invites, notification_email_study_activity, account_setup_completed_at'
+      'first_name, last_name, nickname, orcid_id, orcid_verified, orcid_email_locked, notification_email_invites, notification_email_study_activity, account_setup_completed_at, password_policy_legacy, password_rotation_days'
     )
     .eq('id', user.id)
     .maybeSingle()
@@ -96,7 +96,7 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
       <div>
         <p className="text-sm font-medium text-muted-foreground">Welcome</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-foreground">
-          Set up your account
+          Account Setup
         </h1>
         <p className="mt-2 text-muted-foreground">
           {showOrcidEmailInput ? (
@@ -145,12 +145,14 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
         initialNickname={profile?.nickname ?? null}
         initialEmailInvites={profile?.notification_email_invites ?? true}
         initialEmailStudy={profile?.notification_email_study_activity ?? true}
+        passwordPolicyLegacy={Boolean(profile?.password_policy_legacy)}
+        initialRotationDays={profile?.password_rotation_days ?? null}
       />
 
       {!inviteDriven && !showOrcidEmailInput ? (
         <div className="flex justify-center border-t pt-6">
           <Button variant="ghost" size="sm" asChild>
-            <Link href={nextPath}>Skip for now</Link>
+          {/* <Link href={nextPath}>Skip for now</Link> */}
           </Button>
         </div>
       ) : null}

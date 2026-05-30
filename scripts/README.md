@@ -1,5 +1,15 @@
 # Scripts
 
+## Supabase Auth password settings (production)
+
+After deploying migration `20260521120000_password_policy_and_rotation.sql`:
+
+1. Supabase Dashboard → **Authentication** → **Providers** → **Email**
+2. Set **minimum password length** to **12**
+3. Enable **leaked / compromised password protection** if available on your plan
+
+The app enforces additional strength checks (zxcvbn score) in signup, account setup, and account security flows.
+
 ## create-test-user.js
 
 Creates a test user for local development.

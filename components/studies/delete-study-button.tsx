@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
 import { toast } from '@/lib/toast'
 import {
   Dialog,
@@ -89,8 +90,11 @@ export default function DeleteStudyButton({ studyId, studyTitle }: DeleteStudyBu
               variant="destructive"
               onClick={handleDelete}
               disabled={loading || confirmText !== studyTitle}
+              aria-busy={loading}
             >
-              {loading ? 'Deleting…' : 'Delete Study Permanently'}
+              <ButtonLoadingLabel loading={loading} loadingLabel="Deleting…">
+                Delete Study Permanently
+              </ButtonLoadingLabel>
             </Button>
           </DialogFooter>
         </DialogContent>

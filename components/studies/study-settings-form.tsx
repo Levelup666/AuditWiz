@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -29,7 +30,7 @@ export default function StudySettingsForm({
 }: StudySettingsFormProps) {
   const [pending, setPending] = useState(false)
   const [requireReview, setRequireReview] = useState(initial.require_review_before_approval)
-  const [allowCreator, setAllowCreator] = useState(initial.allow_creator_approval)
+  const [allowOwnerApproval, setAllowOwnerApproval] = useState(initial.allow_creator_approval)
   const [aiEnabled, setAiEnabled] = useState(initial.ai_enabled ?? true)
   const [maxMembersStr, setMaxMembersStr] = useState(
     initial.max_members == null ? '' : String(initial.max_members)
@@ -76,7 +77,7 @@ export default function StudySettingsForm({
     const result = await updateStudySettings(studyId, {
       required_approval_count: count,
       require_review_before_approval: requireReview,
-      allow_creator_approval: allowCreator,
+      allow_creator_approval: allowOwnerApproval,
       ai_enabled: aiEnabled,
       max_members,
     })
@@ -135,13 +136,13 @@ export default function StudySettingsForm({
             <input
               type="checkbox"
               id="allow_creator_approval"
-              checked={allowCreator}
-              onChange={(e) => setAllowCreator(e.target.checked)}
+              checked={allowOwnerApproval}
+              onChange={(e) => setAllowOwnerApproval(e.target.checked)}
               disabled={!studyIsActive}
               className="h-4 w-4 rounded border-gray-300"
             />
             <Label htmlFor="allow_creator_approval" className="font-normal">
-              Allow study creator to approve records (in addition to approver role)
+              Allow study owner to approve records (in addition to approver role)
             </Label>
           </div>
           <div className="flex items-center gap-2">
@@ -164,7 +165,7 @@ export default function StudySettingsForm({
         <CardHeader>
           <CardTitle>Members</CardTitle>
           <CardDescription>
-            Limit how many distinct people can participate (counts once per person, even with two roles).
+            Limit how many distinct people can participate (one role per person).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -197,8 +198,10 @@ export default function StudySettingsForm({
       </Card>
 
       <div className="flex gap-2">
-        <Button type="submit" disabled={pending || !studyIsActive}>
-          {pending ? 'Saving...' : 'Save settings'}
+        <Button type="submit" disabled={pending || !studyIsActive} aria-busy={pending}>
+          <ButtonLoadingLabel loading={pending} loadingLabel="Saving…">
+            Save settings
+          </ButtonLoadingLabel>
         </Button>
         <Button type="button" variant="outline" onClick={() => window.history.back()}>
           Cancel

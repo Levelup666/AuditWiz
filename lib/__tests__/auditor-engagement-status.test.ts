@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getEngagementStatus, isEngagementUsable } from '@/lib/auditor/engagements'
+import { getEngagementStatus, isEngagementUsable } from '@/lib/auditor/engagement-status'
 
 const baseRow = {
   starts_at: '2026-05-01T00:00:00.000Z',

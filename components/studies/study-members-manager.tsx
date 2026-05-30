@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
 import { toast } from '@/lib/toast'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,7 +14,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
 import {
@@ -22,7 +22,17 @@ import {
 } from '@/lib/supabase/member-revocation'
 import { cn } from '@/lib/utils'
 import StudyRoleCatalog from '@/components/studies/study-role-catalog'
-import type { StudyRoleDefinitionRow } from '@/lib/supabase/study-roles'
+import {
+  DEPRECATED_STUDY_ROLE_SLUGS,
+  type StudyRoleDefinitionRow,
+} from '@/lib/supabase/study-roles'
+import { formatStudyRoleLabel } from '@/lib/study-role-display'
+
+function assignableRoleDefinitions(roles: StudyRoleDefinitionRow[]): StudyRoleDefinitionRow[] {
+  return roles.filter(
+    (r) => !(DEPRECATED_STUDY_ROLE_SLUGS as readonly string[]).includes(r.slug)
+  )
+}
 
 interface Member {
   id: string
@@ -51,6 +61,7 @@ type InstitutionCandidate = {
   email: string
   display_name: string | null
   member_display_name: string
+  institution_title?: string | null
   orcid_id: string | null
 }
 
@@ -89,10 +100,11 @@ function studyRevokeDisabled(
 
 function candidateLabel(c: InstitutionCandidate): string {
   const label = c.member_display_name?.trim() || c.display_name?.trim()
+  const title = c.institution_title?.trim()
   const email = c.email === 'Email unavailable' ? '' : c.email
-  if (label && email) return `${label} · ${email}`
-  if (label) return label
-  return email || 'Unknown member'
+  const parts = [label, title, email].filter(Boolean) as string[]
+  if (parts.length > 0) return parts.join(' · ')
+  return 'Unknown member'
 }
 
 function toastStudyInviteEmail(
@@ -145,9 +157,10 @@ export default function StudyMembersManager({
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState('')
   const [orcidId, setOrcidId] = useState('')
-  const [role, setRole] = useState('reviewer')
+  const [role, setRole] = useState('member')
   const [addLoading, setAddLoading] = useState(false)
   const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [updatingRoleMemberId, setUpdatingRoleMemberId] = useState<string | null>(null)
 
   const [candidates, setCandidates] = useState<InstitutionCandidate[]>([])
   const [candidatesLoading, setCandidatesLoading] = useState(false)
@@ -170,7 +183,7 @@ export default function StudyMembersManager({
     setEmail('')
     setSelectedUserId('')
     setOrcidId('')
-    setRole('reviewer')
+    setRole('member')
   }, [studyId, institutionId, allowExternalCollaborators])
 
   const fetchRoleDefinitions = async () => {
@@ -231,10 +244,11 @@ export default function StudyMembersManager({
   }, [studyId])
 
   useEffect(() => {
-    if (roleDefinitions.length === 0) return
-    const slugs = new Set(roleDefinitions.map((r) => r.slug))
+    const assignable = assignableRoleDefinitions(roleDefinitions)
+    if (assignable.length === 0) return
+    const slugs = new Set(assignable.map((r) => r.slug))
     if (!slugs.has(role)) {
-      setRole(roleDefinitions[0]!.slug)
+      setRole(slugs.has('member') ? 'member' : assignable[0]!.slug)
     }
   }, [roleDefinitions, role])
 
@@ -270,7 +284,7 @@ export default function StudyMembersManager({
         if (!res.ok) throw new Error(data.error || res.statusText)
         setSelectedUserId('')
         setOrcidId('')
-        setRole('reviewer')
+        setRole('member')
         toastStudyInviteEmail(data, 'member_added')
         fetchMembers()
         fetchCandidates()
@@ -305,7 +319,7 @@ export default function StudyMembersManager({
       if (!res.ok) throw new Error(data.error || res.statusText)
       setEmail('')
       setOrcidId('')
-      setRole('reviewer')
+      setRole('member')
       if (data.pending) {
         toastStudyInviteEmail(data, 'invite_pending')
       } else {
@@ -320,6 +334,26 @@ export default function StudyMembersManager({
     }
   }
 
+  const handleChangeRole = async (m: Member, nextRole: string) => {
+    if (m.role === nextRole) return
+    setUpdatingRoleMemberId(m.id)
+    try {
+      const res = await fetch(`/api/studies/${studyId}/members`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId: m.id, role: nextRole }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || res.statusText)
+      toast.success('Role updated')
+      fetchMembers()
+    } catch (e) {
+      toast.error('Update failed', e instanceof Error ? e.message : 'Failed to update role')
+    } finally {
+      setUpdatingRoleMemberId(null)
+    }
+  }
+
   const handleRevoke = async (memberId: string) => {
     setRevokingId(memberId)
     try {
@@ -330,13 +364,13 @@ export default function StudyMembersManager({
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || res.statusText)
-      toast.success('Role revoked')
+      toast.success('Member removed')
       fetchMembers()
       fetchCandidates()
     } catch (e) {
       toast.error(
-        'Revoke failed',
-        e instanceof Error ? e.message : 'Failed to revoke member'
+        'Remove failed',
+        e instanceof Error ? e.message : 'Failed to remove member'
       )
     } finally {
       setRevokingId(null)
@@ -357,8 +391,7 @@ export default function StudyMembersManager({
       {meta && (
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">Member seats:</span>{' '}
-          {meta.distinct_member_count} / {meta.member_cap} distinct people (cap includes everyone with any
-          role on this study).
+          {meta.distinct_member_count} / {meta.member_cap} distinct people on this study.
         </p>
       )}
       <p className="text-sm text-muted-foreground max-w-3xl leading-relaxed">
@@ -461,8 +494,8 @@ export default function StudyMembersManager({
                 </div>
                 {emptyCandidates && (
                   <p className="text-sm text-muted-foreground">
-                    Every institution member already has two roles on this study, or there are no
-                    institution members yet.
+                    Every institution member is already on this study, or there are no institution
+                    members yet.
                   </p>
                 )}
               </div>
@@ -505,10 +538,10 @@ export default function StudyMembersManager({
                   className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {(roleDefinitions.length > 0
-                    ? roleDefinitions
+                    ? assignableRoleDefinitions(roleDefinitions)
                     : (
                         [
-                          { id: 'creator', slug: 'creator', display_name: 'Creator' },
+                          { id: 'member', slug: 'member', display_name: 'Member' },
                           { id: 'reviewer', slug: 'reviewer', display_name: 'Reviewer' },
                           { id: 'approver', slug: 'approver', display_name: 'Approver' },
                           { id: 'auditor', slug: 'auditor', display_name: 'Auditor' },
@@ -517,7 +550,7 @@ export default function StudyMembersManager({
                       )
                   ).map((r) => (
                     <option key={r.id} value={r.slug}>
-                      {r.display_name} ({r.slug})
+                      {r.display_name}
                     </option>
                   ))}
                 </select>
@@ -535,12 +568,20 @@ export default function StudyMembersManager({
                     !orcidId.trim()) ||
                   (effectiveMode === 'external' && !email.trim() && !orcidId.trim())
                 }
+                aria-busy={addLoading}
               >
-                {addLoading
-                  ? 'Adding…'
-                  : effectiveMode === 'internal' && useInstitutionPicker
+                <ButtonLoadingLabel
+                  loading={addLoading}
+                  loadingLabel={
+                    effectiveMode === 'internal' && useInstitutionPicker
+                      ? 'Adding…'
+                      : 'Sending invite…'
+                  }
+                >
+                  {effectiveMode === 'internal' && useInstitutionPicker
                     ? 'Add member'
                     : 'Add or invite'}
+                </ButtonLoadingLabel>
               </Button>
             </div>
           </form>
@@ -553,7 +594,7 @@ export default function StudyMembersManager({
             <TableHead>Name</TableHead>
             <TableHead>Email</TableHead>
             <TableHead>ORCID</TableHead>
-            <TableHead>Role (assignment)</TableHead>
+            <TableHead>Role</TableHead>
             <TableHead>Added</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -571,7 +612,32 @@ export default function StudyMembersManager({
                   {m.orcid_id ?? '—'}
                 </TableCell>
                 <TableCell>
-                  <Badge variant="outline">{m.role}</Badge>
+                  <select
+                    value={m.role}
+                    onChange={(e) => void handleChangeRole(m, e.target.value)}
+                    disabled={
+                      updatingRoleMemberId === m.id ||
+                      revokingId === m.id ||
+                      (m.user_id === currentUserId && isStudyPrivilegedRole(m.role))
+                    }
+                    title={
+                      m.user_id === currentUserId && isStudyPrivilegedRole(m.role)
+                        ? STUDY_REVOKE.self
+                        : undefined
+                    }
+                    className="block w-full min-w-[140px] rounded-md border border-input bg-background px-2 py-1 text-sm"
+                  >
+                    {(roleDefinitions.length > 0
+                      ? assignableRoleDefinitions(roleDefinitions)
+                      : [{ slug: m.role, display_name: m.role }]
+                    ).map((r) => (
+                      <option key={r.slug} value={r.slug}>
+                        {'display_name' in r && r.display_name
+                          ? r.display_name
+                          : formatStudyRoleLabel(r.slug)}
+                      </option>
+                    ))}
+                  </select>
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
                   {new Date(m.granted_at).toLocaleDateString()}
@@ -581,10 +647,10 @@ export default function StudyMembersManager({
                     variant="outline"
                     size="sm"
                     onClick={() => handleRevoke(m.id)}
-                    disabled={revoke.disabled || revokingId === m.id}
+                    disabled={revoke.disabled || revokingId === m.id || updatingRoleMemberId === m.id}
                     title={revoke.title}
                   >
-                    {revokingId === m.id ? 'Revoking…' : 'Revoke role'}
+                    {revokingId === m.id ? 'Removing…' : 'Remove'}
                   </Button>
                 </TableCell>
               </TableRow>

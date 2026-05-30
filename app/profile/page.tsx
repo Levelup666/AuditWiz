@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import OrcidBadge from '@/components/profile/orcid-badge'
 import { OrcidOAuthButton } from '@/components/auth/orcid-oauth-button'
 import { formatMemberListName } from '@/lib/profile/member-display-name'
-import { isOrcidPrimaryAccount, userSignedInViaOrcid } from '@/lib/auth/is-orcid-auth'
+import { isOrcidPrimaryAccount, userSignedInViaOrcid, hasEmailPasswordIdentity } from '@/lib/auth/is-orcid-auth'
 import { userNeedsOrcidEmailCapture } from '@/lib/auth/orcid-email-requirements'
 
 export default async function ProfilePage() {
@@ -22,7 +22,7 @@ export default async function ProfilePage() {
   const { data: profile } = await supabase
     .from('profiles')
     .select(
-      'orcid_id, orcid_verified, orcid_email_locked, orcid_affiliation_snapshot, display_name, first_name, last_name, nickname'
+      'orcid_id, orcid_verified, orcid_email_locked, orcid_affiliation_snapshot, display_name, first_name, last_name, nickname, password_policy_legacy, password_rotation_days, password_last_changed_at'
     )
     .eq('id', userId)
     .maybeSingle()
@@ -141,6 +141,25 @@ export default async function ProfilePage() {
               Account, name &amp; notification settings
             </Link>
           </p>
+          {hasEmailPasswordIdentity(user!) ? (
+            <p>
+              <Link
+                href="/account/security"
+                className="font-medium text-primary underline-offset-4 hover:underline"
+              >
+                Password &amp; rotation settings
+              </Link>
+              {profile?.password_policy_legacy ? (
+                <span className="block text-xs text-muted-foreground mt-1">
+                  Legacy password policy (no scheduled rotation required).
+                </span>
+              ) : profile?.password_rotation_days ? (
+                <span className="block text-xs text-muted-foreground mt-1">
+                  Password change interval: every {profile.password_rotation_days} days.
+                </span>
+              ) : null}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 

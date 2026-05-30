@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
+import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
 import { toast } from '@/lib/toast'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -17,11 +18,13 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
 import { INSTITUTION_REVOKE } from '@/lib/supabase/member-revocation'
+import InstitutionMemberIdentity from '@/components/institutions/institution-member-identity'
 
 interface Member {
   id: string
   user_id: string
   role: string
+  title?: string | null
   granted_at: string
   granted_by: string | null
   email: string
@@ -88,6 +91,8 @@ export default function InstitutionMembersManager({
   const [addLoading, setAddLoading] = useState(false)
   const [revokingMemberId, setRevokingMemberId] = useState<string | null>(null)
   const [updatingRoleMemberId, setUpdatingRoleMemberId] = useState<string | null>(null)
+  const [titleDrafts, setTitleDrafts] = useState<Record<string, string>>({})
+  const [savingTitleMemberId, setSavingTitleMemberId] = useState<string | null>(null)
   const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
   const [revokingInviteId, setRevokingInviteId] = useState<string | null>(null)
 
@@ -309,6 +314,31 @@ export default function InstitutionMembersManager({
     }
   }
 
+  const handleSaveTitle = async (m: Member) => {
+    const draft = titleDrafts[m.id] ?? m.title ?? ''
+    setSavingTitleMemberId(m.id)
+    try {
+      const res = await fetch(`/api/institutions/${institutionId}/members`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId: m.id, title: draft }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : res.statusText)
+      toast.success('Title updated')
+      await fetchMembers()
+      setTitleDrafts((prev) => {
+        const next = { ...prev }
+        delete next[m.id]
+        return next
+      })
+    } catch (e) {
+      toast.error('Save failed', e instanceof Error ? e.message : 'Could not update title')
+    } finally {
+      setSavingTitleMemberId(null)
+    }
+  }
+
   const handleChangeRole = async (m: Member, nextRole: 'admin' | 'member') => {
     if (m.role === nextRole) return
     const admins = members.filter((x) => x.role === 'admin')
@@ -390,8 +420,10 @@ export default function InstitutionMembersManager({
             <option value="admin">Admin</option>
           </select>
         </div>
-        <Button type="submit" disabled={addLoading}>
-          {addLoading ? 'Sending…' : 'Invite'}
+        <Button type="submit" disabled={addLoading} aria-busy={addLoading}>
+          <ButtonLoadingLabel loading={addLoading} loadingLabel="Sending…">
+            Invite
+          </ButtonLoadingLabel>
         </Button>
       </form>
 
@@ -453,8 +485,14 @@ export default function InstitutionMembersManager({
                         size="sm"
                         disabled={resendingInviteId === inv.id || revokingInviteId === inv.id}
                         onClick={() => handleResendInvite(inv)}
+                        aria-busy={resendingInviteId === inv.id}
                       >
-                        {resendingInviteId === inv.id ? 'Sending…' : 'Resend'}
+                        <ButtonLoadingLabel
+                          loading={resendingInviteId === inv.id}
+                          loadingLabel="Sending…"
+                        >
+                          Resend
+                        </ButtonLoadingLabel>
                       </Button>
                       <Button
                         type="button"
@@ -462,8 +500,14 @@ export default function InstitutionMembersManager({
                         size="sm"
                         disabled={resendingInviteId === inv.id || revokingInviteId === inv.id}
                         onClick={() => handleRevokeInvite(inv)}
+                        aria-busy={revokingInviteId === inv.id}
                       >
-                        {revokingInviteId === inv.id ? 'Revoking…' : 'Revoke'}
+                        <ButtonLoadingLabel
+                          loading={revokingInviteId === inv.id}
+                          loadingLabel="Revoking…"
+                        >
+                          Revoke
+                        </ButtonLoadingLabel>
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -487,6 +531,7 @@ export default function InstitutionMembersManager({
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
+                  <TableHead>Title</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Added</TableHead>
@@ -498,8 +543,48 @@ export default function InstitutionMembersManager({
                   const remove = institutionRemoveDisabled(m, members, currentUserId)
                   return (
                     <TableRow key={m.id}>
-                      <TableCell className="font-medium">
-                        {m.member_display_name ?? m.email}
+                      <TableCell>
+                        <InstitutionMemberIdentity
+                          displayName={m.member_display_name ?? m.email}
+                          email={m.email}
+                          title={m.title}
+                          showEmail={false}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1 max-w-[220px]">
+                          <Input
+                            value={titleDrafts[m.id] ?? m.title ?? ''}
+                            onChange={(e) =>
+                              setTitleDrafts((prev) => ({ ...prev, [m.id]: e.target.value }))
+                            }
+                            placeholder="e.g. Principal Investigator"
+                            className="h-8 text-sm"
+                            maxLength={120}
+                            disabled={savingTitleMemberId === m.id || revokingMemberId === m.id}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="self-start"
+                            disabled={
+                              savingTitleMemberId === m.id ||
+                              revokingMemberId === m.id ||
+                              (titleDrafts[m.id] ?? m.title ?? '').trim() ===
+                                (m.title?.trim() ?? '')
+                            }
+                            onClick={() => void handleSaveTitle(m)}
+                            aria-busy={savingTitleMemberId === m.id}
+                          >
+                            <ButtonLoadingLabel
+                              loading={savingTitleMemberId === m.id}
+                              loadingLabel="Saving…"
+                            >
+                              Save title
+                            </ButtonLoadingLabel>
+                          </Button>
+                        </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{m.email}</TableCell>
                       <TableCell>

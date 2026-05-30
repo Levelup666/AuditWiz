@@ -18,12 +18,13 @@ import { generateInviteToken } from '@/lib/invites/token'
 import { getPendingInviteExpiresAt } from '@/lib/invites/pending-invite-expiry'
 import { revokeExpiredPendingStudyEmailInvite } from '@/lib/invites/revoke-expired-pending-study-invite'
 import { resolveMemberDisplayName } from '@/lib/profile/resolve-member-display'
-import { getStudyRoleDefinitionIdBySlug } from '@/lib/supabase/study-roles'
+import { getStudyRoleDefinitionIdBySlug, isAssignableStudyRoleSlug } from '@/lib/supabase/study-roles'
 import { getEffectiveStudyMemberCap } from '@/lib/study-member-cap'
+import { assertRoomForNewStudyParticipant } from '@/lib/study-participant-room'
 import {
-  activeStudyAssignmentCount,
-  assertRoomForNewStudyParticipant,
-} from '@/lib/study-participant-room'
+  changeStudyMemberRole,
+  userHasActiveStudyAssignment,
+} from '@/lib/study-member-role'
 
 async function createPendingStudyInviteByEmail(params: {
   supabase: Awaited<ReturnType<typeof createClient>>
@@ -228,7 +229,12 @@ export async function POST(
     return NextResponse.json({ error: 'role is required' }, { status: 400 })
   }
 
-  const roleDefId = await getStudyRoleDefinitionIdBySlug(supabase, studyId, String(role).trim())
+  const roleSlug = String(role).trim()
+  if (!isAssignableStudyRoleSlug(roleSlug)) {
+    return NextResponse.json({ error: 'Invalid or deprecated role' }, { status: 400 })
+  }
+
+  const roleDefId = await getStudyRoleDefinitionIdBySlug(supabase, studyId, roleSlug)
   if (!roleDefId) {
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
   }
@@ -276,10 +282,9 @@ export async function POST(
       )
     }
 
-    const ac = await activeStudyAssignmentCount(supabase, studyId, userIdTrim)
-    if (ac >= 2) {
+    if (await userHasActiveStudyAssignment(supabase, studyId, userIdTrim)) {
       return NextResponse.json(
-        { error: 'User already has the maximum number of roles on this study' },
+        { error: 'User is already a member of this study. Change their role in the members list.' },
         { status: 409 }
       )
     }
@@ -315,7 +320,7 @@ export async function POST(
     if (insertByIdError) {
       if (
         insertByIdError.code === '23505' ||
-        insertByIdError.message.includes('At most two')
+        insertByIdError.message.includes('active role')
       ) {
         return NextResponse.json(
           { error: 'User is already a member of this study' },
@@ -388,10 +393,9 @@ export async function POST(
         return NextResponse.json({ error: institutionOnlyMessage }, { status: 403 })
       }
 
-      const acO = await activeStudyAssignmentCount(supabase, studyId, identity.user_id)
-      if (acO >= 2) {
+      if (await userHasActiveStudyAssignment(supabase, studyId, identity.user_id)) {
         return NextResponse.json(
-          { error: 'User already has the maximum number of roles on this study' },
+          { error: 'User is already a member of this study. Change their role in the members list.' },
           { status: 409 }
         )
       }
@@ -430,7 +434,7 @@ export async function POST(
       if (insertError) {
         if (
           insertError.code === '23505' ||
-          insertError.message.includes('At most two')
+          insertError.message.includes('active role')
         ) {
           return NextResponse.json(
             { error: 'User is already a member of this study' },
@@ -658,22 +662,19 @@ export async function POST(
     return NextResponse.json({ error: institutionOnlyMessage }, { status: 403 })
   }
 
-  const acE = await activeStudyAssignmentCount(supabase, studyId, existingUserId)
-  if (acE >= 2) {
+  if (await userHasActiveStudyAssignment(supabase, studyId, existingUserId)) {
     return NextResponse.json(
       {
         error:
-          'User already has the maximum number of roles on this study. Revoke a role before sending another invite.',
+          'User is already a member of this study. Change their role in the members list instead of sending another invite.',
       },
       { status: 409 }
     )
   }
 
-  if (acE === 0) {
-    const roomEx = await assertRoomForNewStudyParticipant(supabase, studyId, existingUserId)
-    if (!roomEx.ok) {
-      return NextResponse.json({ error: roomEx.message }, { status: 403 })
-    }
+  const roomEx = await assertRoomForNewStudyParticipant(supabase, studyId, existingUserId)
+  if (!roomEx.ok) {
+    return NextResponse.json({ error: roomEx.message }, { status: 403 })
   }
 
   let rawTokenExisting: string
@@ -745,11 +746,46 @@ export async function PATCH(
   }
 
   const body = await request.json()
-  const { memberId, revoked } = body as { memberId?: string; revoked?: boolean }
+  const { memberId, revoked, role } = body as {
+    memberId?: string
+    revoked?: boolean
+    role?: string
+  }
 
-  if (!memberId || revoked !== true) {
+  if (!memberId) {
+    return NextResponse.json({ error: 'memberId is required' }, { status: 400 })
+  }
+
+  if (typeof role === 'string' && role.trim()) {
+    const { data: memberRow, error: memberErr } = await supabase
+      .from('study_members')
+      .select('user_id')
+      .eq('id', memberId)
+      .eq('study_id', studyId)
+      .is('revoked_at', null)
+      .maybeSingle()
+
+    if (memberErr || !memberRow) {
+      return NextResponse.json({ error: 'Member not found' }, { status: 404 })
+    }
+
+    const result = await changeStudyMemberRole(supabase, {
+      studyId,
+      actorUserId: user.id,
+      targetUserId: memberRow.user_id,
+      roleSlug: role,
+    })
+
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status })
+    }
+
+    return NextResponse.json({ success: true, unchanged: result.unchanged === true })
+  }
+
+  if (revoked !== true) {
     return NextResponse.json(
-      { error: 'memberId and revoked: true required' },
+      { error: 'memberId and revoked: true or role required' },
       { status: 400 }
     )
   }
@@ -781,7 +817,7 @@ export async function PATCH(
   for (const r of activeRows ?? []) {
     if (r.id === member.id) continue
     remainingUsers.add(r.user_id)
-    if (r.role === 'admin' || r.role === 'creator') {
+    if (r.role === 'admin') {
       remainingPrivilegedUsers.add(r.user_id)
     }
   }

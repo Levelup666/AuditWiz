@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
 import { toast } from '@/lib/toast'
 import {
   Dialog,
@@ -63,8 +64,11 @@ export default function RecordStatusActions({
           variant="outline"
           onClick={() => updateStatus('under_review')}
           disabled={loading}
+          aria-busy={loading}
         >
-          {loading ? 'Submitting…' : 'Submit for Review'}
+          <ButtonLoadingLabel loading={loading} loadingLabel="Submitting…">
+            Submit for Review
+          </ButtonLoadingLabel>
         </Button>
       )}
       {canReject && (status === 'under_review' || status === 'submitted') && (
@@ -100,8 +104,11 @@ export default function RecordStatusActions({
                 <Button
                   onClick={() => updateStatus('rejected', reason.trim() || undefined)}
                   disabled={loading}
+                  aria-busy={loading}
                 >
-                  {loading ? 'Rejecting…' : 'Reject Record'}
+                  <ButtonLoadingLabel loading={loading} loadingLabel="Rejecting…">
+                    Reject Record
+                  </ButtonLoadingLabel>
                 </Button>
               </DialogFooter>
             </DialogContent>

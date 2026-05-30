@@ -49,9 +49,13 @@ export default async function AuditorLandingPage() {
               e.scope === 'institution_wide'
                 ? 'Institution-wide'
                 : `${e.studies.length} stud${e.studies.length === 1 ? 'y' : 'ies'}`
-            const studyHrefs = e.studies
-              .filter((s) => s.study_id)
-              .map((s) => ({ id: s.study_id, title: s.study_title ?? '(untitled study)' }))
+            type StudyHref = { id: string; title: string }
+            const studyHrefs: StudyHref[] = e.studies
+              .filter((s: { study_id: string; study_title: string | null }) => Boolean(s.study_id))
+              .map((s: { study_id: string; study_title: string | null }) => ({
+                id: s.study_id,
+                title: s.study_title ?? '(untitled study)',
+              }))
             return (
               <Card key={e.id} className="border-amber-200">
                 <CardHeader>

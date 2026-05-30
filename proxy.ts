@@ -4,6 +4,7 @@ import {
   pathBypassesOrcidEmailGate,
   userNeedsOrcidEmailGateRedirect,
 } from '@/lib/auth/orcid-email-gate'
+import { getPasswordGateRedirect, pathBypassesPasswordGate } from '@/lib/auth/password-rotation-gate'
 
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -61,6 +62,20 @@ export async function proxy(request: NextRequest) {
         url.searchParams.set('orcid_email_required', '1')
         const nextPath = pathname + request.nextUrl.search
         url.searchParams.set('next', nextPath || '/onboarding')
+        return NextResponse.redirect(url)
+      }
+    }
+
+    if (user && !pathBypassesPasswordGate(pathname)) {
+      const passwordGate = await getPasswordGateRedirect(supabase, user.id, user, pathname)
+      if (passwordGate.redirect) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/account/security'
+        url.searchParams.set('reason', passwordGate.reason)
+        const nextPath = pathname + request.nextUrl.search
+        if (nextPath && nextPath !== '/account/security') {
+          url.searchParams.set('next', nextPath)
+        }
         return NextResponse.redirect(url)
       }
     }

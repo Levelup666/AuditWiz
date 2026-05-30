@@ -17,7 +17,7 @@ Research-focused auditing platform designed with clinical-ready architecture pri
 - Studies replace "projects" as the core organizational unit
 - **New studies** require a non-null `institution_id` and **institution admin** membership (enforced in the app and via RLS). Complete institution onboarding first, or ask an institution admin to promote you.
 - Study-scoped role-based access control (RBAC)
-- Roles: `creator`, `reviewer`, `approver`, `auditor`, `admin`
+- Roles: `member`, `reviewer`, `approver`, `auditor`, `admin` (one role per person per study; use custom roles for blended capabilities)
 
 ### Immutable Records with Versioning
 - Records cannot be edited once submitted; drafts can be saved and edited before submission
@@ -126,7 +126,7 @@ npm run dev
 1. Navigate to `/studies`
 2. Click "New Study"
 3. Fill in study details
-4. You'll be automatically added as a creator/admin
+4. You'll be automatically added as a study **admin**
 
 ### Creating Records
 1. Open a study

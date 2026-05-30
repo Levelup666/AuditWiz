@@ -36,16 +36,16 @@ This document explains the architectural decisions and design patterns used in A
 
 **Roles are Study-Specific**
 - `study_members` table: One user can have different roles in different studies
-- Roles: `creator`, `reviewer`, `approver`, `auditor`, `admin`
+- Roles: `member`, `reviewer`, `approver`, `auditor`, `admin` (legacy `creator` migrated to `admin`)
 - Permissions checked via `get_user_study_role()` function
 - RLS policies enforce access at database level
 
 **Permission Hierarchy**
-- `creator`: Can create records
+- `member`: View, comment, and create draft records
 - `reviewer`: Can view and review records
 - `approver`: Can approve records and sign
 - `auditor`: Full read access, audit capabilities
-- `admin`: Full control, can manage members
+- `admin`: Full control, can manage members and study settings
 
 ### 4. Versioning & Amendments
 
@@ -53,7 +53,7 @@ This document explains the architectural decisions and design patterns used in A
 - Draft records can be saved and edited in-place before submission
 - Each draft save updates `content`, `content_hash`, `last_edited_at`, `last_edited_by`
 - Every draft save emits `record_draft_updated` audit event with previous/new state hashes
-- RLS allows UPDATE only when `status = 'draft'` and user has creator role
+- RLS allows UPDATE only when `status = 'draft'` and user has `can_create_records` capability
 - After submission, content is immutable; use amendments for changes
 
 **Version Chain**

@@ -79,7 +79,7 @@ AI is advisory-only.
 - Never rely on frontend-only authorization.
 
 Allowed roles:
-- creator
+- member
 - reviewer
 - approver
 - auditor

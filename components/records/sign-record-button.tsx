@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
 import {
   Dialog,
   DialogContent,
@@ -162,8 +163,10 @@ export default function SignRecordButton({ studyId, record }: SignRecordButtonPr
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? 'Signing...' : 'Create Signature'}
+            <Button type="submit" disabled={loading} aria-busy={loading}>
+              <ButtonLoadingLabel loading={loading} loadingLabel="Signing…">
+                Create Signature
+              </ButtonLoadingLabel>
             </Button>
           </DialogFooter>
         </form>

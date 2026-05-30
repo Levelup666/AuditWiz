@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { canManageStudyMembers } from '@/lib/supabase/permissions'
-import { SYSTEM_ROLE_SLUGS } from '@/lib/supabase/study-roles'
+import { DEPRECATED_STUDY_ROLE_SLUGS, SYSTEM_ROLE_SLUGS } from '@/lib/supabase/study-roles'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 import { assertStudyIsActive } from '@/lib/supabase/study-status'
@@ -109,6 +109,9 @@ export async function POST(
       { error: 'That slug is reserved for a built-in role' },
       { status: 400 }
     )
+  }
+  if ((DEPRECATED_STUDY_ROLE_SLUGS as readonly string[]).includes(slug)) {
+    return NextResponse.json({ error: 'That slug is deprecated' }, { status: 400 })
   }
 
   const { data: maxRow } = await supabase

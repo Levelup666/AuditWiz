@@ -2,6 +2,7 @@
 
 import { useFormStatus } from 'react-dom'
 import { Button } from '@/components/ui/button'
+import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -12,8 +13,10 @@ import { INSTITUTION_RESEARCH_TYPES } from '@/lib/institution-research-types'
 function SubmitButton() {
   const { pending } = useFormStatus()
   return (
-    <Button type="submit" disabled={pending}>
-      {pending ? 'Saving…' : 'Save'}
+    <Button type="submit" disabled={pending} aria-busy={pending}>
+      <ButtonLoadingLabel loading={pending} loadingLabel="Saving…">
+        Save
+      </ButtonLoadingLabel>
     </Button>
   )
 }

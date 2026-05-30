@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
 import { toast } from '@/lib/toast'
 import { notifyInvitesChanged } from '@/lib/invites/notify-invites-changed'
 
@@ -37,8 +38,10 @@ export default function AcceptStudyInviteButton({ inviteId, studyId }: AcceptStu
   }
 
   return (
-    <Button onClick={handleAccept} disabled={loading}>
-      {loading ? 'Accepting…' : 'Accept invite'}
+    <Button onClick={handleAccept} disabled={loading} aria-busy={loading}>
+      <ButtonLoadingLabel loading={loading} loadingLabel="Accepting…">
+        Accept invite
+      </ButtonLoadingLabel>
     </Button>
   )
 }

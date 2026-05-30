@@ -34,20 +34,3 @@ export async function assertRoomForNewStudyParticipant(
   }
   return { ok: true }
 }
-
-export async function activeStudyAssignmentCount(
-  supabase: SupabaseClient,
-  studyId: string,
-  userId: string
-): Promise<number> {
-  const { count, error } = await supabase
-    .from('study_member_role_assignments')
-    .select('*', { count: 'exact', head: true })
-    .eq('study_id', studyId)
-    .eq('user_id', userId)
-    .is('revoked_at', null)
-  if (error) {
-    throw new Error(error.message)
-  }
-  return count ?? 0
-}

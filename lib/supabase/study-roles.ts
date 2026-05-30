@@ -22,14 +22,25 @@ export type StudyRoleDefinitionRow = {
 
 /** Built-in slugs seeded for every study. */
 export const SYSTEM_ROLE_SLUGS = [
-  'creator',
+  'member',
   'reviewer',
   'approver',
   'auditor',
   'admin',
 ] as const
 
+/** Legacy slug; assignments migrated to admin — do not assign. */
+export const DEPRECATED_STUDY_ROLE_SLUGS = ['creator'] as const
+
 export type SystemRoleSlug = (typeof SYSTEM_ROLE_SLUGS)[number]
+
+export function isAssignableStudyRoleSlug(slug: string): boolean {
+  const s = slug.trim().toLowerCase()
+  if (!s || (DEPRECATED_STUDY_ROLE_SLUGS as readonly string[]).includes(s)) {
+    return false
+  }
+  return true
+}
 
 export async function getStudyRoleDefinitionIdBySlug(
   supabase: SupabaseClient,

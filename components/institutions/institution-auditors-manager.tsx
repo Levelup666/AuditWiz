@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/table'
 import { Loader2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
-import { getEngagementStatus } from '@/lib/auditor/engagements'
+import { getEngagementStatus } from '@/lib/auditor/engagement-status'
 
 type StudyOption = { id: string; title: string }
 

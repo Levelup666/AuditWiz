@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
 import { toast } from '@/lib/toast'
 import { notifyInvitesChanged } from '@/lib/invites/notify-invites-changed'
 
@@ -42,8 +43,16 @@ export default function DeclineInviteButton({ kind, inviteId, scopeId }: Decline
   }
 
   return (
-    <Button type="button" variant="outline" onClick={handleDecline} disabled={loading}>
-      {loading ? 'Declining…' : 'Decline'}
+    <Button
+      type="button"
+      variant="outline"
+      onClick={handleDecline}
+      disabled={loading}
+      aria-busy={loading}
+    >
+      <ButtonLoadingLabel loading={loading} loadingLabel="Declining…">
+        Decline
+      </ButtonLoadingLabel>
     </Button>
   )
 }

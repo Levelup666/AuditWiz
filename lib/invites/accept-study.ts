@@ -5,10 +5,8 @@ import { isActiveInstitutionMember } from '@/lib/supabase/permissions'
 import { getStudyCollaborationPolicy } from '@/lib/study-institution-policy'
 import { getStudyRoleDefinitionIdBySlug } from '@/lib/supabase/study-roles'
 import { createAdminClient } from '@/lib/supabase/admin'
-import {
-  activeStudyAssignmentCount,
-  assertRoomForNewStudyParticipant,
-} from '@/lib/study-participant-room'
+import { assertRoomForNewStudyParticipant } from '@/lib/study-participant-room'
+import { userHasActiveStudyAssignment } from '@/lib/study-member-role'
 
 export type AcceptStudyInviteResult =
   | { ok: true }
@@ -107,27 +105,17 @@ export async function acceptStudyInviteForUser(
     return { ok: false, status: 500, error: 'Study role is not configured' }
   }
 
-  let existingSlots: number
-  try {
-    existingSlots = await activeStudyAssignmentCount(supabase, studyId, userId)
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Assignment check failed'
-    return { ok: false, status: 500, error: msg }
-  }
-
-  if (existingSlots >= 2) {
+  if (await userHasActiveStudyAssignment(supabase, studyId, userId)) {
     return {
       ok: false,
       status: 409,
-      error: 'You already have the maximum number of roles on this study',
+      error: 'You are already a member of this study',
     }
   }
 
-  if (existingSlots === 0) {
-    const room = await assertRoomForNewStudyParticipant(supabase, studyId, userId)
-    if (!room.ok) {
-      return { ok: false, status: 403, error: room.message }
-    }
+  const room = await assertRoomForNewStudyParticipant(supabase, studyId, userId)
+  if (!room.ok) {
+    return { ok: false, status: 403, error: room.message }
   }
 
   const { data: existingSame } = await admin
@@ -151,7 +139,7 @@ export async function acceptStudyInviteForUser(
   })
 
   if (insertError) {
-    if (insertError.code === '23505' || insertError.message.includes('At most two')) {
+    if (insertError.code === '23505' || insertError.message.includes('active role')) {
       return { ok: false, status: 409, error: 'You are already a member of this study' }
     }
     return { ok: false, status: 500, error: insertError.message }

@@ -7,7 +7,10 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { toast } from '@/lib/toast'
-import type { StudyRoleDefinitionRow } from '@/lib/supabase/study-roles'
+import {
+  DEPRECATED_STUDY_ROLE_SLUGS,
+  type StudyRoleDefinitionRow,
+} from '@/lib/supabase/study-roles'
 
 const FLAG_META: { key: keyof Pick<
   StudyRoleDefinitionRow,
@@ -182,8 +185,8 @@ export default function StudyRoleCatalog({
       <CardHeader className="pb-4">
         <CardTitle className="text-lg">Role catalog</CardTitle>
         <CardDescription>
-          Built-in roles are fixed. Create custom roles with explicit capabilities; members can hold up to
-          two roles, and effective access is the union of both.
+          Built-in roles are fixed. Create custom roles with explicit capabilities; each member has
+          one role per study.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-8">
@@ -198,7 +201,11 @@ export default function StudyRoleCatalog({
               </tr>
             </thead>
             <tbody>
-              {roles.map((r) => (
+              {roles
+                .filter(
+                  (r) => !(DEPRECATED_STUDY_ROLE_SLUGS as readonly string[]).includes(r.slug)
+                )
+                .map((r) => (
                 <tr key={r.id} className="border-b last:border-0 align-top">
                   <td className="p-2">
                     <div className="font-medium">{r.display_name}</div>

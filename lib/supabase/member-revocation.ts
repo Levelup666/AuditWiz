@@ -7,7 +7,7 @@ export const STUDY_REVOKE = {
   self: 'You cannot remove yourself. Another study admin must remove you.',
   lastMember: 'Cannot remove the last member of this study.',
   lastPrivileged:
-    'Cannot remove the last admin or creator. Add or promote another admin or creator first.',
+    'Cannot remove the last study admin. Add or promote another admin first.',
 } as const
 
 export const INSTITUTION_REVOKE = {
@@ -18,12 +18,12 @@ export const INSTITUTION_REVOKE = {
 } as const
 
 export function isStudyPrivilegedRole(role: string): boolean {
-  return role === 'admin' || role === 'creator'
+  return role === 'admin'
 }
 
 /**
- * Validates revoking one study_members row (one role assignment).
- * Counts reflect state **after** that row is removed, so dual-role users are handled correctly.
+ * Validates removing a study member.
+ * Counts reflect state after that member is removed.
  */
 export function validateStudyMemberRevocation(input: {
   actorId: string
@@ -31,7 +31,7 @@ export function validateStudyMemberRevocation(input: {
   targetRole: string
   /** Distinct users who still have ≥1 active study_members row after this row is removed */
   remainingDistinctMemberCount: number
-  /** Distinct users who still have ≥1 admin/creator row after this row is removed */
+  /** Distinct users who still have ≥1 admin row after this row is removed */
   remainingPrivilegedDistinctUserCount: number
 }): { ok: true } | { ok: false; message: string } {
   const {
