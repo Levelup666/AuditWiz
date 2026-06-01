@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createAuditEvent } from '@/lib/supabase/audit'
+import { createAuditEventWithClient } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 
 /**
@@ -43,13 +43,14 @@ export async function GET(
     null
   const userAgent = request.headers.get('user-agent') || null
 
-  await supabase.rpc('create_share_access_event', {
+  const admin = createAdminClient()
+
+  await admin.rpc('create_share_access_event', {
     p_shared_artifact_id: artifact.id,
     p_ip_address: ip,
     p_user_agent: userAgent,
   })
 
-  const admin = createAdminClient()
   const { data: recordForStudy } = await admin
     .from('records')
     .select('study_id')
@@ -61,7 +62,8 @@ export async function GET(
     accessed_at: new Date().toISOString(),
     ip,
   })
-  await createAuditEvent(
+  await createAuditEventWithClient(
+    admin,
     studyId,
     null,
     'share_accessed',

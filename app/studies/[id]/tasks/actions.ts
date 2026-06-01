@@ -6,6 +6,8 @@ import { canManageStudyMembers } from '@/lib/supabase/permissions'
 import { assertStudyIsActive } from '@/lib/supabase/study-status'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { notifyTaskAssigned } from '@/lib/notifications/study-events'
 
 async function assertAllUsersAreActiveStudyMembers(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -33,6 +35,38 @@ async function assertAllUsersAreActiveStudyMembers(
     }
   }
   return { ok: true }
+}
+
+async function loadStudyTitle(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  studyId: string
+): Promise<string> {
+  const { data } = await supabase.from('studies').select('title').eq('id', studyId).single()
+  return (data?.title as string) || 'Study'
+}
+
+async function sendTaskAssignedNotifications(
+  studyId: string,
+  studyTitle: string,
+  taskId: string,
+  taskTitle: string,
+  assigneeUserIds: string[],
+  dueAt: string | null
+): Promise<void> {
+  if (assigneeUserIds.length === 0) return
+  try {
+    const admin = createAdminClient()
+    await notifyTaskAssigned(admin, {
+      studyId,
+      studyTitle,
+      taskId,
+      taskTitle,
+      assigneeUserIds,
+      dueAt,
+    })
+  } catch (e) {
+    console.error('Failed to create task assigned notifications', e)
+  }
 }
 
 export async function createStudyTask(
@@ -106,6 +140,16 @@ export async function createStudyTask(
     { title, assignee_user_ids: input.assigneeUserIds }
   )
 
+  const studyTitle = await loadStudyTitle(supabase, studyId)
+  await sendTaskAssignedNotifications(
+    studyId,
+    studyTitle,
+    task.id,
+    title,
+    input.assigneeUserIds,
+    input.dueAt?.trim() || null
+  )
+
   revalidatePath(`/studies/${studyId}`)
   revalidatePath('/dashboard')
   return { success: true, taskId: task.id }
@@ -142,6 +186,12 @@ export async function updateStudyTask(
   if (fetchErr || !existing || existing.status !== 'open') {
     return { error: 'Task not found or cannot be edited' }
   }
+
+  const { data: existingAssignees } = await supabase
+    .from('study_task_assignees')
+    .select('user_id')
+    .eq('task_id', taskId)
+  const previousAssigneeIds = new Set((existingAssignees ?? []).map((a) => a.user_id as string))
 
   const title = input.title?.trim()
   if (!title) {
@@ -190,6 +240,17 @@ export async function updateStudyTask(
     null,
     stateHash,
     { title, assignee_user_ids: input.assigneeUserIds }
+  )
+
+  const newlyAssigned = input.assigneeUserIds.filter((id) => !previousAssigneeIds.has(id))
+  const studyTitle = await loadStudyTitle(supabase, studyId)
+  await sendTaskAssignedNotifications(
+    studyId,
+    studyTitle,
+    taskId,
+    title,
+    newlyAssigned,
+    input.dueAt?.trim() || null
   )
 
   revalidatePath(`/studies/${studyId}`)

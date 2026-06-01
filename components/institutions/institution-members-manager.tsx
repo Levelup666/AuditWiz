@@ -190,7 +190,7 @@ export default function InstitutionMembersManager({
         toast.warning(
           'Invite created',
           (data.email_dispatch_message ??
-            'Email was not sent. For existing accounts without Resend, ask them to sign in and open Invites.') +
+            'Email was not sent. For existing accounts without Postmark configured, ask them to sign in and open Invites.') +
             codeHint +
             msgHint
         )

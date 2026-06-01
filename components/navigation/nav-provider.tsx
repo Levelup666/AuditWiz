@@ -23,6 +23,8 @@ type NavContextType = {
   hasActiveAuditorEngagement: boolean | null
   /** Null while loading; verified ORCID linked to the current account (if any). */
   orcidIdentity: OrcidSessionIdentity | null
+  /** Null while loading; unread in-app notification count. */
+  unreadNotificationCount: number | null
 }
 const NavContext = createContext<NavContextType | null>(null)
 
@@ -41,6 +43,7 @@ export default function NavProvider({ children }: { children: React.ReactNode })
   >(null)
   const [signedInViaOrcid, setSignedInViaOrcid] = useState<boolean>(false)
   const [orcidIdentity, setOrcidIdentity] = useState<OrcidSessionIdentity | null>(null)
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState<number | null>(null)
 
   useEffect(() => {
     if (pathname?.startsWith('/auth/callback')) {
@@ -134,6 +137,25 @@ export default function NavProvider({ children }: { children: React.ReactNode })
     }
   }, [isAuthenticated, signedInViaOrcid])
 
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setUnreadNotificationCount(null)
+      return
+    }
+    let cancelled = false
+    fetch('/api/notifications/unread-count')
+      .then((r) => (r.ok ? r.json() : { count: 0 }))
+      .then((d: { count?: number }) => {
+        if (!cancelled) setUnreadNotificationCount(typeof d?.count === 'number' ? d.count : 0)
+      })
+      .catch(() => {
+        if (!cancelled) setUnreadNotificationCount(0)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isAuthenticated, pathname])
+
   return (
     <NavContext.Provider
       value={{
@@ -143,6 +165,7 @@ export default function NavProvider({ children }: { children: React.ReactNode })
         canViewLogs,
         hasActiveAuditorEngagement,
         orcidIdentity,
+        unreadNotificationCount,
       }}
     >
       {children}

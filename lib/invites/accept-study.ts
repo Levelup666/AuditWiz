@@ -7,6 +7,7 @@ import { getStudyRoleDefinitionIdBySlug } from '@/lib/supabase/study-roles'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { assertRoomForNewStudyParticipant } from '@/lib/study-participant-room'
 import { userHasActiveStudyAssignment } from '@/lib/study-member-role'
+import { notifyStudyMemberJoined } from '@/lib/notifications/study-events'
 
 export type AcceptStudyInviteResult =
   | { ok: true }
@@ -199,6 +200,23 @@ export async function acceptStudyInviteForUser(
     inviteAcceptedHash,
     { study_id: studyId, role: invite.role }
   )
+
+  try {
+    const admin = createAdminClient()
+    const { data: studyRow } = await admin
+      .from('studies')
+      .select('title')
+      .eq('id', studyId)
+      .single()
+    await notifyStudyMemberJoined(
+      admin,
+      studyId,
+      userId,
+      (studyRow?.title as string) || 'Study'
+    )
+  } catch (e) {
+    console.error('Failed to create study_member_joined notifications', e)
+  }
 
   return { ok: true }
 }

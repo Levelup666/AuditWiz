@@ -92,9 +92,9 @@ ALCHEMY_RPC_URL=your_rpc_url (optional)
 OPENAI_API_KEY=your_openai_key (optional, for AI summarization)
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 
-# Optional: email notifications for pending study/institution invites (Resend)
-# RESEND_API_KEY=re_...
-# RESEND_FROM_EMAIL="AuditWiz <notifications@yourdomain.com>"
+# Optional: transactional email (invites, self-leave admin alerts) via Postmark Server API
+# POSTMARK_SERVER_TOKEN=...
+# POSTMARK_FROM_EMAIL="AuditWiz <notifications@yourdomain.com>"
 ```
 
 3. Run database migrations:

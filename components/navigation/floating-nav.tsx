@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   Building2,
   ShieldCheck,
+  Bell,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useNavContext, type OrcidSessionIdentity } from './nav-provider'
@@ -28,6 +29,12 @@ const baseNavigation = [
   { name: 'Dashboard', href: '/dashboard', icon: Home },
   { name: 'Profile', href: '/profile', icon: User },
 ] as const
+
+const notificationsNavItem = {
+  name: 'Notifications',
+  href: '/notifications',
+  icon: Bell,
+} as const
 
 const logsNavItem = {
   name: 'Logs',
@@ -43,6 +50,7 @@ const auditorNavItem = {
 
 type NavItem =
   | (typeof baseNavigation)[number]
+  | typeof notificationsNavItem
   | typeof logsNavItem
   | typeof auditorNavItem
 
@@ -52,12 +60,14 @@ function FloatingNavItem({
   collapsed,
   onNavigate,
   navItems,
+  badgeCount,
 }: {
   item: NavItem
   pathname: string | null
   collapsed: boolean
   onNavigate: () => void
   navItems: readonly { href: string }[]
+  badgeCount?: number
 }) {
   const isActive = isNavActive(pathname, item.href, navItems)
   if (collapsed) {
@@ -65,7 +75,7 @@ function FloatingNavItem({
       <Link
         href={item.href}
         className={cn(
-          'mb-2 flex h-10 w-10 items-center justify-center rounded-md transition-colors',
+          'relative mb-2 flex h-10 w-10 items-center justify-center rounded-md transition-colors',
           isActive
             ? 'bg-gray-800 text-white'
             : 'text-gray-400 hover:bg-gray-800 hover:text-white'
@@ -74,6 +84,11 @@ function FloatingNavItem({
         aria-current={isActive ? 'page' : undefined}
       >
         <item.icon className="h-5 w-5" />
+        {badgeCount != null && badgeCount > 0 ? (
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
+            {badgeCount > 99 ? '99+' : badgeCount}
+          </span>
+        ) : null}
       </Link>
     )
   }
@@ -96,6 +111,11 @@ function FloatingNavItem({
         )}
       />
       <span className="truncate">{item.name}</span>
+      {badgeCount != null && badgeCount > 0 ? (
+        <span className="ml-auto rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+          {badgeCount > 99 ? '99+' : badgeCount}
+        </span>
+      ) : null}
     </Link>
   )
 }
@@ -111,6 +131,7 @@ export default function FloatingNav() {
     canViewLogs,
     hasActiveAuditorEngagement,
     orcidIdentity,
+    unreadNotificationCount,
   } = ctx ?? {
     isOpen: false,
     setIsOpen: () => {},
@@ -118,6 +139,7 @@ export default function FloatingNav() {
     canViewLogs: false,
     hasActiveAuditorEngagement: false,
     orcidIdentity: null as OrcidSessionIdentity | null,
+    unreadNotificationCount: null as number | null,
   }
 
   if (!isAuthenticated) {
@@ -130,6 +152,7 @@ export default function FloatingNav() {
 
   const navigation: NavItem[] = [
     ...baseNavigation.slice(0, 3),
+    notificationsNavItem,
     ...(canViewLogs ? [logsNavItem] : []),
     ...(hasActiveAuditorEngagement ? [auditorNavItem] : []),
     baseNavigation[3],
@@ -179,6 +202,9 @@ export default function FloatingNav() {
                   collapsed={false}
                   onNavigate={() => setIsOpen(false)}
                   navItems={navigation}
+                  badgeCount={
+                    item.href === '/notifications' ? (unreadNotificationCount ?? 0) : undefined
+                  }
                 />
               ))}
               <InvitesNavLink isOpen onNavigate={() => setIsOpen(false)} />
@@ -205,6 +231,9 @@ export default function FloatingNav() {
                 collapsed
                 onNavigate={() => setIsOpen(false)}
                 navItems={navigation}
+                badgeCount={
+                  item.href === '/notifications' ? (unreadNotificationCount ?? 0) : undefined
+                }
               />
             ))}
             <InvitesNavLink

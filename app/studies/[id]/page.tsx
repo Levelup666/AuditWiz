@@ -5,7 +5,10 @@ import RecordsList from '@/components/records/records-list'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Plus, Settings } from 'lucide-react'
-import { canCreateRecord, canManageStudyMembers } from '@/lib/supabase/permissions'
+import { canCreateRecord, getStudyMemberPermissions } from '@/lib/supabase/permissions'
+import StudyMembersRosterDialog from '@/components/studies/study-members-roster-dialog'
+import LeaveStudyButton from '@/components/studies/leave-study-button'
+import { getStudyLeaveEligibility } from '@/lib/study-leave-eligibility'
 import { Badge } from '@/components/ui/badge'
 import StudyDocumentationCard from '@/components/studies/study-documentation-card'
 import StudyTasksSection from '@/components/studies/study-tasks-section'
@@ -42,9 +45,21 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
     notFound()
   }
 
+  const perms = await getStudyMemberPermissions(user.id, id)
+  const canViewStudy = Boolean(perms?.can_view)
+  const canManageMembers = Boolean(perms?.can_manage_members)
+
   const canCreate = await canCreateRecord(user.id, id)
 
-  const canManageMembers = await canManageStudyMembers(user.id, id)
+  const { data: activeMemberRows } = canViewStudy
+    ? await supabase
+        .from('study_members')
+        .select('id, user_id, role')
+        .eq('study_id', id)
+        .is('revoked_at', null)
+    : { data: [] as Array<{ id: string; user_id: string; role: string }> }
+
+  const leaveEligibility = getStudyLeaveEligibility(user.id, activeMemberRows ?? [])
 
   const studyIsActive = study.status === 'active'
 
@@ -75,7 +90,21 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
             </p>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {canViewStudy && (
+            <>
+              <StudyMembersRosterDialog
+                studyId={id}
+                studyTitle={study.title}
+                buttonSize="default"
+              />
+              <LeaveStudyButton
+                studyId={id}
+                studyTitle={study.title}
+                disabledReason={leaveEligibility.disabledReason}
+              />
+            </>
+          )}
           {canManageMembers && (
             <>
               <Link href={`/studies/${id}/settings`}>

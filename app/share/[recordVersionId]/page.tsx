@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { generateHash } from '@/lib/crypto'
-import { createAuditEvent } from '@/lib/supabase/audit'
+import { createAuditEventWithClient } from '@/lib/supabase/audit'
 import { notFound } from 'next/navigation'
 import { headers } from 'next/headers'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -56,13 +56,14 @@ export default async function SharePage({ params, searchParams }: SharePageProps
     null
   const userAgent = headersList.get('user-agent') || null
 
-  await supabase.rpc('create_share_access_event', {
+  const admin = createAdminClient()
+
+  await admin.rpc('create_share_access_event', {
     p_shared_artifact_id: artifact.id,
     p_ip_address: ip,
     p_user_agent: userAgent,
   })
 
-  const admin = createAdminClient()
   const { data: recordForAudit } = await admin
     .from('records')
     .select('study_id')
@@ -73,7 +74,8 @@ export default async function SharePage({ params, searchParams }: SharePageProps
     accessed_at: new Date().toISOString(),
     ip,
   })
-  await createAuditEvent(
+  await createAuditEventWithClient(
+    admin,
     recordForAudit?.study_id ?? null,
     null,
     'share_accessed',

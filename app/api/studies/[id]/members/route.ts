@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { canManageStudyMembers, isActiveInstitutionMember } from '@/lib/supabase/permissions'
+import { canManageStudyMembers, getStudyMemberPermissions, isActiveInstitutionMember } from '@/lib/supabase/permissions'
 import { getStudyCollaborationPolicy } from '@/lib/study-institution-policy'
 import {
   inviteEmailDispatchFields,
@@ -25,6 +25,12 @@ import {
   changeStudyMemberRole,
   userHasActiveStudyAssignment,
 } from '@/lib/study-member-role'
+import {
+  computeRemainingMemberCounts,
+  emitStudyMemberRemovedAudit,
+  revokeStudyMemberRow,
+} from '@/lib/study-member-revoke'
+import { notifyStudyMemberJoined } from '@/lib/notifications/study-events'
 
 async function createPendingStudyInviteByEmail(params: {
   supabase: Awaited<ReturnType<typeof createClient>>
@@ -90,6 +96,19 @@ async function createPendingStudyInviteByEmail(params: {
   return { inviteId: invite.id, rawToken, expiresAt: expiresAt.toISOString() }
 }
 
+async function notifyStudyMemberJoinedInApp(
+  studyId: string,
+  newUserId: string,
+  studyTitle: string
+): Promise<void> {
+  try {
+    const admin = createAdminClient()
+    await notifyStudyMemberJoined(admin, studyId, newUserId, studyTitle)
+  } catch (e) {
+    console.error('Failed to create study_member_joined notifications', e)
+  }
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -104,10 +123,11 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const allowed = await canManageStudyMembers(user.id, studyId)
-  if (!allowed) {
+  const perms = await getStudyMemberPermissions(user.id, studyId)
+  if (!perms?.can_view) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
+  const canManage = Boolean(perms.can_manage_members)
 
   const { data: members, error } = await supabase
     .from('study_members')
@@ -178,6 +198,7 @@ export async function GET(
   return NextResponse.json({
     members: withEmails,
     meta: {
+      can_manage_members: canManage,
       member_cap: effCap,
       distinct_member_count: distinctUsers,
     },
@@ -366,6 +387,8 @@ export async function POST(
       emailDispatch = inviteEmailDispatchFields(emailResult)
     }
 
+    await notifyStudyMemberJoinedInApp(studyId, userIdTrim, policy.studyTitle)
+
     return NextResponse.json({
       success: true,
       message:
@@ -460,6 +483,7 @@ export async function POST(
         stateHash,
         { role, orcid_id: orcidId }
       )
+      await notifyStudyMemberJoinedInApp(studyId, identity.user_id, policy.studyTitle)
       return NextResponse.json({ success: true })
     }
 
@@ -716,7 +740,7 @@ export async function POST(
     pending: true,
     expires_at: pendingExpiresExisting,
     message:
-      'Pending invite created. They already have an account—ask them to sign in and accept under Invites. They were emailed if Resend is configured.',
+      'Pending invite created. They already have an account—ask them to sign in and accept under Invites. They were emailed if Postmark is configured.',
     ...inviteEmailDispatchFields(emailResultExisting),
   })
 }
@@ -812,70 +836,30 @@ export async function PATCH(
     return NextResponse.json({ error: countErr.message ?? 'Count failed' }, { status: 500 })
   }
 
-  const remainingUsers = new Set<string>()
-  const remainingPrivilegedUsers = new Set<string>()
-  for (const r of activeRows ?? []) {
-    if (r.id === member.id) continue
-    remainingUsers.add(r.user_id)
-    if (r.role === 'admin') {
-      remainingPrivilegedUsers.add(r.user_id)
-    }
-  }
+  const counts = computeRemainingMemberCounts(activeRows ?? [], member.id)
 
   const decision = validateStudyMemberRevocation({
     actorId: user.id,
     targetUserId: member.user_id,
     targetRole: member.role,
-    remainingDistinctMemberCount: remainingUsers.size,
-    remainingPrivilegedDistinctUserCount: remainingPrivilegedUsers.size,
+    remainingDistinctMemberCount: counts.remainingDistinctMemberCount,
+    remainingPrivilegedDistinctUserCount: counts.remainingPrivilegedDistinctUserCount,
   })
 
   if (!decision.ok) {
     return NextResponse.json({ error: decision.message }, { status: 403 })
   }
 
-  const now = new Date().toISOString()
-  if (member.role_definition_id) {
-    const { error: raErr } = await supabase
-      .from('study_member_role_assignments')
-      .update({ revoked_at: now })
-      .eq('study_id', studyId)
-      .eq('user_id', member.user_id)
-      .eq('role_definition_id', member.role_definition_id)
-      .is('revoked_at', null)
-
-    if (raErr) {
-      return NextResponse.json({ error: raErr.message }, { status: 500 })
-    }
-  } else {
-    const { error } = await supabase
-      .from('study_members')
-      .update({ revoked_at: now })
-      .eq('id', memberId)
-      .eq('study_id', studyId)
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
+  const revokeResult = await revokeStudyMemberRow(supabase, studyId, member)
+  if (!revokeResult.ok) {
+    return NextResponse.json({ error: revokeResult.message }, { status: 500 })
   }
 
-  const stateHash = await generateHash({
-    study_id: studyId,
-    user_id: member.user_id,
-    role: member.role,
-    revoked_by: user.id,
-  })
-
-  await createAuditEvent(
+  await emitStudyMemberRemovedAudit({
     studyId,
-    user.id,
-    'member_removed',
-    'study_member',
-    member.id,
-    null,
-    stateHash,
-    { user_id: member.user_id, role: member.role }
-  )
+    actorUserId: user.id,
+    member,
+  })
 
   return NextResponse.json({ success: true })
 }

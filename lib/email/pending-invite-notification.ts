@@ -1,12 +1,13 @@
 /**
  * Notify users about pending invites (study or institution).
  * 1) When supabaseAdmin is provided, tries auth.admin.inviteUserByEmail (same mailer as sign-up).
- * 2) Otherwise or if that user already exists, uses Resend when RESEND_API_KEY is set.
+ * 2) Otherwise or if that user already exists, uses Postmark when POSTMARK_SERVER_TOKEN is set.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { formatPendingInviteExpiryForEmail } from '@/lib/invites/pending-invite-expiry'
 import { getJwtRoleFromSecret } from '@/lib/supabase/jwt-role-from-secret'
+import { sendTransactionalEmail } from '@/lib/email/send-transactional'
 
 function appBaseUrl(): string {
   if (process.env.NEXT_PUBLIC_APP_URL) {
@@ -29,31 +30,30 @@ function supabaseInviteFailedUserMessage(
   supabaseAuthError: { code?: string; status?: number; message?: string } | null | undefined
 ): string {
   if (supabaseAuthError?.code === 'over_email_send_rate_limit') {
-    return 'No email was sent: Supabase Auth is rate-limiting outbound email for this project (common after many invites or tests in a short window). Wait and retry, or configure custom SMTP in the Dashboard. Set RESEND_API_KEY to deliver via Resend instead. The invite is saved—share the link from your records if needed.'
+    return 'No email was sent: Supabase Auth is rate-limiting outbound email for this project (common after many invites or tests in a short window). Wait and retry, or configure custom SMTP in the Dashboard. Set POSTMARK_SERVER_TOKEN to deliver via Postmark instead. The invite is saved—share the link from your records if needed.'
   }
   if (supabaseAuthError?.code === 'not_admin') {
-    return 'No email was sent: this is not your institution or study role. Supabase Auth rejected the server invite call (Auth code not_admin). Usually SUPABASE_SERVICE_ROLE_KEY is set to the anon publishable key by mistake—use the service_role secret from Supabase Dashboard → Project Settings → API. Or set RESEND_API_KEY so this app sends the same invite link via Resend. The invite is saved—share the link from your records if needed.'
+    return 'No email was sent: this is not your institution or study role. Supabase Auth rejected the server invite call (Auth code not_admin). Usually SUPABASE_SERVICE_ROLE_KEY is set to the anon publishable key by mistake—use the service_role secret from Supabase Dashboard → Project Settings → API. Or set POSTMARK_SERVER_TOKEN so this app sends the same invite link via Postmark. The invite is saved—share the link from your records if needed.'
   }
   const smtpHint =
     'If you use custom SMTP: open Supabase Dashboard → Project Settings → Auth → SMTP Settings, send a test email, and confirm the sender address/domain matches what your provider allows (SPF/DKIM), TLS mode matches the port (often 587 STARTTLS or 465 SSL), and credentials are correct.'
-  return `No email was sent: Supabase Auth could not deliver the invite email (${smtpHint}). Also confirm Authentication → URL Configuration allows your app redirect URLs (e.g. …/auth/callback). Set RESEND_API_KEY in this app to fall back to Resend with the same invite link text. The invite is saved—share the link from your records if needed.`
+  return `No email was sent: Supabase Auth could not deliver the invite email (${smtpHint}). Also confirm Authentication → URL Configuration allows your app redirect URLs (e.g. …/auth/callback). Set POSTMARK_SERVER_TOKEN in this app to fall back to Postmark with the same invite link text. The invite is saved—share the link from your records if needed.`
 }
 
 export type PendingInviteEmailResult = {
   sent: boolean
   /** How the message was delivered when sent is true */
-  channel?: 'supabase' | 'resend'
-  reason?: 'no_resend_api_key' | 'resend_error'
+  channel?: 'supabase' | 'postmark'
+  reason?: 'no_postmark_token' | 'no_from_address' | 'postmark_error'
   /**
-   * When sent is false, reason is no_resend_api_key: why we fell through to needing Resend.
-   * Used for accurate admin UI copy (do not assume "user already exists").
+   * When sent is false, why we fell through to needing Postmark transactional mail.
    */
-  noResendDetail?:
+  transactionalFallbackDetail?:
     | 'supabase_said_user_exists'
     | 'supabase_invite_failed'
     | 'supabase_admin_not_provided'
     | 'supabase_service_role_misconfigured'
-    | 'existing_user_notify_no_resend'
+    | 'existing_user_notify_no_postmark'
   /** Last Auth admin error when inviteUserByEmail did not succeed (safe to surface; no PII). */
   supabaseAuthError?: { code?: string; status?: number; message?: string }
   /** Study email invites: refines admin toast copy (institution invites omit this). */
@@ -63,12 +63,13 @@ export type PendingInviteEmailResult = {
 /** Shared API/UI fields after sendPendingInviteEmail (institution + study invite routes). */
 export function inviteEmailDispatchFields(emailResult: PendingInviteEmailResult): {
   email_dispatched: boolean
-  email_channel: 'supabase' | 'resend' | null
+  email_channel: 'supabase' | 'postmark' | null
   email_dispatch_message: string | undefined
   email_dispatch_detail: string | null
   email_supabase_error: { code?: string; status?: number; message?: string } | null
 } {
   const audience = emailResult.studyInviteAudience
+  const detail = emailResult.transactionalFallbackDetail
 
   const emailDispatchMessage = emailResult.sent
     ? audience === 'existing_auth_user'
@@ -78,23 +79,25 @@ export function inviteEmailDispatchFields(emailResult: PendingInviteEmailResult)
         : audience === 'new_email'
           ? 'Pending invite created. We emailed them an invitation link to sign up or sign in and complete setup.'
           : undefined
-    : emailResult.reason === 'no_resend_api_key'
-      ? emailResult.noResendDetail === 'existing_user_notify_no_resend'
-        ? 'No email was sent: existing users are notified via Resend only for this flow. Set RESEND_API_KEY. The pending invite is saved—they can still accept from Invites when signed in.'
-        : emailResult.noResendDetail === 'supabase_said_user_exists'
-          ? 'No email was sent: this address already has an Auth user. Set RESEND_API_KEY to deliver a copy, or ask them to sign in and open Invites. The invite is saved.'
-          : emailResult.noResendDetail === 'supabase_service_role_misconfigured'
-            ? 'No email was sent: the server’s SUPABASE_SERVICE_ROLE_KEY is not the service_role JWT (often the anon key was pasted by mistake). Fix it in Dashboard → Project Settings → API, or set RESEND_API_KEY to email the invite link. The invite is saved.'
-            : emailResult.noResendDetail === 'supabase_invite_failed'
+    : emailResult.reason === 'no_postmark_token'
+      ? detail === 'existing_user_notify_no_postmark'
+        ? 'No email was sent: existing users are notified via Postmark for this flow. Set POSTMARK_SERVER_TOKEN. The pending invite is saved—they can still accept from Invites when signed in.'
+        : detail === 'supabase_said_user_exists'
+          ? 'No email was sent: this address already has an Auth user. Set POSTMARK_SERVER_TOKEN to deliver a copy, or ask them to sign in and open Invites. The invite is saved.'
+          : detail === 'supabase_service_role_misconfigured'
+            ? 'No email was sent: the server’s SUPABASE_SERVICE_ROLE_KEY is not the service_role JWT (often the anon key was pasted by mistake). Fix it in Dashboard → Project Settings → API, or set POSTMARK_SERVER_TOKEN to email the invite link. The invite is saved.'
+            : detail === 'supabase_invite_failed'
               ? supabaseInviteFailedUserMessage(emailResult.supabaseAuthError)
-              : 'No email was sent: Resend is not configured (set RESEND_API_KEY). The invite is saved.'
-      : 'The invite is saved, but Resend rejected the message. Check server logs and RESEND_FROM_EMAIL / domain verification.'
+              : 'No email was sent: Postmark is not configured (set POSTMARK_SERVER_TOKEN). The invite is saved.'
+      : emailResult.reason === 'no_from_address'
+        ? 'No email was sent: POSTMARK_FROM_EMAIL is not set. Configure a verified sender in Postmark and set POSTMARK_FROM_EMAIL. The invite is saved.'
+        : 'The invite is saved, but Postmark rejected the message. Check server logs and POSTMARK_FROM_EMAIL / sender verification.'
 
   return {
     email_dispatched: emailResult.sent,
     email_channel: emailResult.channel ?? null,
     email_dispatch_message: emailDispatchMessage,
-    email_dispatch_detail: emailResult.noResendDetail ?? null,
+    email_dispatch_detail: detail ?? null,
     email_supabase_error: emailResult.supabaseAuthError ?? null,
   }
 }
@@ -114,13 +117,29 @@ function isSupabaseAlreadyRegisteredError(
   )
 }
 
+function mapTransactionalFailure(
+  result: { sent: boolean; reason?: string },
+  fallback: Omit<PendingInviteEmailResult, 'sent' | 'channel' | 'reason'>
+): PendingInviteEmailResult {
+  if (result.sent) {
+    return { ...fallback, sent: true, channel: 'postmark' }
+  }
+  const reason =
+    result.reason === 'no_from_address'
+      ? ('no_from_address' as const)
+      : result.reason === 'postmark_error'
+        ? ('postmark_error' as const)
+        : ('no_postmark_token' as const)
+  return { ...fallback, sent: false, reason }
+}
+
 export async function sendPendingInviteEmail(params: {
   to: string
   kind: PendingInviteEmailKind
   contextLabel: string
   /** Opaque invite token (raw). Email and redirects use /invite/[token]. */
   inviteRawToken?: string
-  /** Matches DB `expires_at` — included in plain-text body for Supabase + Resend. */
+  /** Matches DB `expires_at` — included in plain-text body for Supabase + Postmark. */
   expiresAtIso?: string
   /** Service-role client: enables Supabase invite email (same provider as sign-up confirmation). */
   supabaseAdmin?: SupabaseClient
@@ -164,8 +183,9 @@ ${setupUrl}
 If you already completed setup, go directly to Invites:
 ${invitesUrl}${expiryNote}`
 
-  let noResendDetail: NonNullable<PendingInviteEmailResult['noResendDetail']> =
-    'supabase_admin_not_provided'
+  let transactionalFallbackDetail: NonNullable<
+    PendingInviteEmailResult['transactionalFallbackDetail']
+  > = 'supabase_admin_not_provided'
   let supabaseAuthError: PendingInviteEmailResult['supabaseAuthError']
   function authErr(e: { code?: string; status?: number; message?: string }) {
     const rawMsg = typeof e.message === 'string' ? e.message : undefined
@@ -180,123 +200,91 @@ ${invitesUrl}${expiryNote}`
 
   if (supabaseAdmin) {
     if (jwtRole && jwtRole !== 'service_role') {
-      noResendDetail = 'supabase_service_role_misconfigured'
+      transactionalFallbackDetail = 'supabase_service_role_misconfigured'
       supabaseAuthError = {
         code: 'misconfigured_service_role_key',
         message:
           'SUPABASE_SERVICE_ROLE_KEY must be the service_role secret from Supabase Dashboard (API settings), not the anon publishable key.',
       }
     } else {
-    const minimalRedirect = `${base}/auth/callback`
-    const tryInvite = async (rt: string) =>
-      supabaseAdmin.auth.admin.inviteUserByEmail(to, { redirectTo: rt })
+      const minimalRedirect = `${base}/auth/callback`
+      const tryInvite = async (rt: string) =>
+        supabaseAdmin.auth.admin.inviteUserByEmail(to, { redirectTo: rt })
 
-    const { error: firstErr } = await tryInvite(redirectTo)
-    if (firstErr) {
-      console.warn('[pending-invite-email] inviteUserByEmail failed', {
-        code: (firstErr as { code?: string }).code,
-        message: (firstErr as { message?: string }).message,
-      })
-    }
-    if (!firstErr) {
-      return {
-        sent: true,
-        channel: 'supabase',
-        ...(kind === 'study' ? { studyInviteAudience: 'new_email' as const } : {}),
-      }
-    }
-
-    supabaseAuthError = authErr(firstErr as { code?: string; status?: number; message?: string })
-
-    if (isSupabaseAlreadyRegisteredError(firstErr)) {
-      noResendDetail = 'supabase_said_user_exists'
-    } else if (minimalRedirect !== redirectTo) {
-      console.warn(
-        '[pending-invite-email] inviteUserByEmail failed; retrying with minimal redirectTo (callback only):',
-        (firstErr as { message?: string }).message,
-        (firstErr as { code?: string }).code
-      )
-      const { error: secondErr } = await tryInvite(minimalRedirect)
-      if (secondErr) {
-        console.warn('[pending-invite-email] inviteUserByEmail failed (minimal redirectTo)', {
-          code: (secondErr as { code?: string }).code,
-          message: (secondErr as { message?: string }).message,
+      const { error: firstErr } = await tryInvite(redirectTo)
+      if (firstErr) {
+        console.warn('[pending-invite-email] inviteUserByEmail failed', {
+          code: (firstErr as { code?: string }).code,
+          message: (firstErr as { message?: string }).message,
         })
       }
-      if (!secondErr) {
+      if (!firstErr) {
         return {
           sent: true,
           channel: 'supabase',
           ...(kind === 'study' ? { studyInviteAudience: 'new_email' as const } : {}),
         }
       }
-      supabaseAuthError = authErr(secondErr as { code?: string; status?: number; message?: string })
-      if (isSupabaseAlreadyRegisteredError(secondErr)) {
-        noResendDetail = 'supabase_said_user_exists'
-      } else {
-        noResendDetail = 'supabase_invite_failed'
+
+      supabaseAuthError = authErr(firstErr as { code?: string; status?: number; message?: string })
+
+      if (isSupabaseAlreadyRegisteredError(firstErr)) {
+        transactionalFallbackDetail = 'supabase_said_user_exists'
+      } else if (minimalRedirect !== redirectTo) {
         console.warn(
-          '[pending-invite-email] inviteUserByEmail failed after retry; trying Resend if configured:',
-          (secondErr as { message?: string }).message,
-          (secondErr as { code?: string }).code
+          '[pending-invite-email] inviteUserByEmail failed; retrying with minimal redirectTo (callback only):',
+          (firstErr as { message?: string }).message,
+          (firstErr as { code?: string }).code
+        )
+        const { error: secondErr } = await tryInvite(minimalRedirect)
+        if (secondErr) {
+          console.warn('[pending-invite-email] inviteUserByEmail failed (minimal redirectTo)', {
+            code: (secondErr as { code?: string }).code,
+            message: (secondErr as { message?: string }).message,
+          })
+        }
+        if (!secondErr) {
+          return {
+            sent: true,
+            channel: 'supabase',
+            ...(kind === 'study' ? { studyInviteAudience: 'new_email' as const } : {}),
+          }
+        }
+        supabaseAuthError = authErr(
+          secondErr as { code?: string; status?: number; message?: string }
+        )
+        if (isSupabaseAlreadyRegisteredError(secondErr)) {
+          transactionalFallbackDetail = 'supabase_said_user_exists'
+        } else {
+          transactionalFallbackDetail = 'supabase_invite_failed'
+          console.warn(
+            '[pending-invite-email] inviteUserByEmail failed after retry; trying Postmark if configured:',
+            (secondErr as { message?: string }).message,
+            (secondErr as { code?: string }).code
+          )
+        }
+      } else {
+        transactionalFallbackDetail = 'supabase_invite_failed'
+        console.warn(
+          '[pending-invite-email] inviteUserByEmail failed; trying Postmark if configured:',
+          (firstErr as { message?: string }).message,
+          (firstErr as { code?: string }).code
         )
       }
-    } else {
-      noResendDetail = 'supabase_invite_failed'
-      console.warn(
-        '[pending-invite-email] inviteUserByEmail failed; trying Resend if configured:',
-        (firstErr as { message?: string }).message,
-        (firstErr as { code?: string }).code
-      )
-    }
     }
   }
 
-  const apiKey = process.env.RESEND_API_KEY
-  const from = process.env.RESEND_FROM_EMAIL || 'AuditWiz <onboarding@resend.dev>'
-
-  if (!apiKey) {
-    if (process.env.NODE_ENV === 'development') {
-      console.info('[pending-invite-email] (skipped — no RESEND_API_KEY)', { to, subject })
-    }
-    return {
-      sent: false,
-      reason: 'no_resend_api_key',
-      noResendDetail,
-      supabaseAuthError,
-    }
-  }
-
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from,
-      to: [to],
-      subject,
-      text,
-    }),
-  })
-
-  if (!res.ok) {
-    const body = await res.text()
-    console.error('[pending-invite-email] Resend error', res.status, body)
-    return { sent: false, reason: 'resend_error', supabaseAuthError }
-  }
-
-  return {
-    sent: true,
-    channel: 'resend',
+  const postmarkResult = await sendTransactionalEmail({ to, subject, text })
+  return mapTransactionalFailure(postmarkResult, {
+    transactionalFallbackDetail,
+    supabaseAuthError,
     ...(kind === 'study' ? { studyInviteAudience: 'new_email' as const } : {}),
-  }
+  })
 }
 
 /**
  * Email for an Auth user who already exists: no inviteUserByEmail (avoids "create account" UX).
- * Resend-only: sign in → Invites, plus optional /invite/{token} deep link.
+ * Postmark transactional: sign in → Invites, plus optional /invite/{token} deep link.
  */
 export async function sendExistingUserPendingInviteNotification(params: {
   to: string
@@ -328,53 +316,11 @@ ${invitesUrl}
 You can also open this link while signed in (use the invited email):
 ${inviteUrl}${expiryNote}`
 
-  const apiKey = process.env.RESEND_API_KEY
-  const from = process.env.RESEND_FROM_EMAIL || 'AuditWiz <onboarding@resend.dev>'
-
-  if (!apiKey) {
-    if (process.env.NODE_ENV === 'development') {
-      console.info('[pending-invite-email] existing-user notify skipped — no RESEND_API_KEY', {
-        to,
-        subject,
-      })
-    }
-    return {
-      sent: false,
-      reason: 'no_resend_api_key',
-      noResendDetail: 'existing_user_notify_no_resend',
-      studyInviteAudience: 'existing_auth_user',
-    }
-  }
-
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from,
-      to: [to],
-      subject,
-      text,
-    }),
-  })
-
-  if (!res.ok) {
-    const body = await res.text()
-    console.error('[pending-invite-email] Resend error (existing user notify)', res.status, body)
-    return {
-      sent: false,
-      reason: 'resend_error',
-      studyInviteAudience: 'existing_auth_user',
-    }
-  }
-
-  return {
-    sent: true,
-    channel: 'resend',
+  const postmarkResult = await sendTransactionalEmail({ to, subject, text })
+  return mapTransactionalFailure(postmarkResult, {
+    transactionalFallbackDetail: 'existing_user_notify_no_postmark',
     studyInviteAudience: 'existing_auth_user',
-  }
+  })
 }
 
 /** User-facing message when a pending ORCID-only invite has no email to send. */

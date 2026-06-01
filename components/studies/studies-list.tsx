@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import StudiesListToolbar from '@/components/studies/studies-list-toolbar'
+import StudyMembersRosterDialog from '@/components/studies/study-members-roster-dialog'
 
 interface StudiesListProps {
   userId: string
@@ -153,11 +154,14 @@ export default async function StudiesList({
                   {truncateDoc(study.documentation)}
                 </TableCell>
                 <TableCell className="text-right">
-                  <Link href={`/studies/${study.id}`}>
-                    <Button variant="outline" size="sm">
-                      View
-                    </Button>
-                  </Link>
+                  <div className="flex items-center justify-end gap-2">
+                    <StudyMembersRosterDialog studyId={study.id} studyTitle={study.title} />
+                    <Link href={`/studies/${study.id}`}>
+                      <Button variant="outline" size="sm">
+                        View
+                      </Button>
+                    </Link>
+                  </div>
                 </TableCell>
               </TableRow>
             )

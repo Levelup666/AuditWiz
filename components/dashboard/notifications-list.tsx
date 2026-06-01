@@ -2,7 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { Bell } from 'lucide-react'
 
 interface Notification {
@@ -33,8 +35,25 @@ export default function NotificationsList({ notifications }: NotificationsListPr
     }
   }
 
+  const unreadCount = notifications.filter((n) => !n.read_at).length
+
   if (!notifications || notifications.length === 0) {
-    return null
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            Notifications
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CardDescription className="mb-3">No notifications yet.</CardDescription>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/notifications">Open notifications</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
@@ -44,10 +63,13 @@ export default function NotificationsList({ notifications }: NotificationsListPr
           <Bell className="h-4 w-4" />
           Notifications
         </CardTitle>
+        <Button variant="ghost" size="sm" className="h-auto px-2 py-1 text-xs" asChild>
+          <Link href="/notifications">View all</Link>
+        </Button>
       </CardHeader>
       <CardContent>
         <CardDescription className="mb-4">
-          {notifications.filter((n) => !n.read_at).length} unread
+          {unreadCount} unread
         </CardDescription>
         <ul className="space-y-3">
           {notifications.slice(0, 5).map((n) => (

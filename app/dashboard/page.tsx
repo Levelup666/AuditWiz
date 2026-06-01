@@ -105,9 +105,7 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {notifications.length > 0 && (
-        <NotificationsList notifications={notifications} />
-      )}
+      <NotificationsList notifications={notifications} />
     </div>
   )
 }

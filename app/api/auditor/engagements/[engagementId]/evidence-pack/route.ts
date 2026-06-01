@@ -55,28 +55,13 @@ export async function GET(
   }
 
   const { data: rawStudyIds, error: rpcErr } = await supabase.rpc(
-    'audit_engagement_study_ids_for_user',
-    { p_user_id: user.id }
+    'audit_engagement_study_ids_for_user'
   )
   if (rpcErr) {
     return NextResponse.json({ error: rpcErr.message }, { status: 500 })
   }
 
-  const rawStudyIdsArr = (rawStudyIds ?? []) as unknown[]
-  const allStudyIds: string[] = [
-    ...new Set(
-      rawStudyIdsArr
-        .map((row: unknown): string => {
-          if (typeof row === 'string') return row
-          if (row && typeof row === 'object') {
-            const v = (row as Record<string, unknown>).audit_engagement_study_ids_for_user
-            return typeof v === 'string' ? v : ''
-          }
-          return ''
-        })
-        .filter((s: string): s is string => s.length > 0)
-    ),
-  ]
+  const allStudyIds: string[] = [...new Set(((rawStudyIds ?? []) as string[]).filter(Boolean))]
 
   // Limit to studies covered by this engagement (institution_wide => all institution studies; specific_studies => engagement_studies)
   let scopedStudyIds: string[] = []

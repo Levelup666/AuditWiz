@@ -87,16 +87,12 @@ export async function listActiveEngagementsForUser(
   })
 }
 
-/** Returns the union of study ids covered by ANY active engagement for the user. */
-export async function getEngagementStudyIdsForUser(userId: string): Promise<string[]> {
+/** Returns the union of study ids covered by ANY active engagement for the signed-in user. */
+export async function getEngagementStudyIdsForUser(_userId: string): Promise<string[]> {
   const supabase = await createClient()
-  const { data, error } = await supabase.rpc('audit_engagement_study_ids_for_user', {
-    p_user_id: userId,
-  })
+  const { data, error } = await supabase.rpc('audit_engagement_study_ids_for_user')
   if (error || !data) return []
-  return [...new Set((data as Array<{ audit_engagement_study_ids_for_user: string } | string>).map((row) =>
-    typeof row === 'string' ? row : row.audit_engagement_study_ids_for_user
-  ))]
+  return [...new Set((data as string[]).filter(Boolean))]
 }
 
 /** True if user has any usable engagement (drives nav surface). */
@@ -121,13 +117,12 @@ export async function userHasActiveEngagement(userId: string): Promise<boolean> 
 
 /** Server-side scope check for a single engagement and study. Use in API guards. */
 export async function isAuditorScopedToStudy(
-  userId: string,
+  _userId: string,
   studyId: string
 ): Promise<boolean> {
   const supabase = await createClient()
   const { data, error } = await supabase.rpc('is_audit_engagement_viewer_of_study', {
     p_study_id: studyId,
-    p_user_id: userId,
   })
   if (error) return false
   return Boolean(data)

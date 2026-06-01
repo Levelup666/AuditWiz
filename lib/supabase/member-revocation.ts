@@ -10,6 +10,12 @@ export const STUDY_REVOKE = {
     'Cannot remove the last study admin. Add or promote another admin first.',
 } as const
 
+export const STUDY_LEAVE = {
+  lastMember: 'You cannot leave because you are the only member of this study.',
+  lastPrivileged:
+    'You cannot leave because you are the only study admin. Promote another admin first.',
+} as const
+
 export const INSTITUTION_REVOKE = {
   self: 'You cannot remove yourself. Another institution admin must remove you.',
   lastMember: 'Cannot remove the last member of this institution.',
@@ -53,6 +59,33 @@ export function validateStudyMemberRevocation(input: {
     remainingPrivilegedDistinctUserCount === 0
   ) {
     return { ok: false, message: STUDY_REVOKE.lastPrivileged }
+  }
+  return { ok: true }
+}
+
+/**
+ * Validates voluntary self-departure from a study.
+ * Counts reflect state after the departing member is removed.
+ */
+export function validateStudyMemberSelfDeparture(input: {
+  targetRole: string
+  remainingDistinctMemberCount: number
+  remainingPrivilegedDistinctUserCount: number
+}): { ok: true } | { ok: false; message: string } {
+  const {
+    targetRole,
+    remainingDistinctMemberCount,
+    remainingPrivilegedDistinctUserCount,
+  } = input
+
+  if (remainingDistinctMemberCount === 0) {
+    return { ok: false, message: STUDY_LEAVE.lastMember }
+  }
+  if (
+    isStudyPrivilegedRole(targetRole) &&
+    remainingPrivilegedDistinctUserCount === 0
+  ) {
+    return { ok: false, message: STUDY_LEAVE.lastPrivileged }
   }
   return { ok: true }
 }
