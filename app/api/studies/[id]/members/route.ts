@@ -31,6 +31,7 @@ import {
   revokeStudyMemberRow,
 } from '@/lib/study-member-revoke'
 import { notifyStudyMemberJoined } from '@/lib/notifications/study-events'
+import { parseMemberRemovalNote } from '@/lib/member-removal-note'
 
 async function createPendingStudyInviteByEmail(params: {
   supabase: Awaited<ReturnType<typeof createClient>>
@@ -770,10 +771,11 @@ export async function PATCH(
   }
 
   const body = await request.json()
-  const { memberId, revoked, role } = body as {
+  const { memberId, revoked, role, removalNote } = body as {
     memberId?: string
     revoked?: boolean
     role?: string
+    removalNote?: string
   }
 
   if (!memberId) {
@@ -812,6 +814,11 @@ export async function PATCH(
       { error: 'memberId and revoked: true or role required' },
       { status: 400 }
     )
+  }
+
+  const noteResult = parseMemberRemovalNote(removalNote)
+  if (!noteResult.ok) {
+    return NextResponse.json({ error: noteResult.error }, { status: 400 })
   }
 
   const { data: member, error: fetchError } = await supabase
@@ -859,6 +866,7 @@ export async function PATCH(
     studyId,
     actorUserId: user.id,
     member,
+    extraMetadata: { removal_note: noteResult.note, reason: 'removed_by_admin' },
   })
 
   return NextResponse.json({ success: true })

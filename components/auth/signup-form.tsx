@@ -90,10 +90,12 @@ export default function SignUpForm({
         hasSession
           ? redirectedFrom
             ? 'Continue to complete your invitation.'
-            : 'Continue to create your institution.'
+            : 'Continue to finish account setup.'
           : 'Check your email to confirm your account.'
       )
-      router.push(redirectedFrom || '/onboarding')
+      router.push(
+        redirectedFrom || '/account/setup?next=/onboarding&credentials_required=1'
+      )
       router.refresh()
     } catch {
       toast.error('Sign up failed', 'An unexpected error occurred')

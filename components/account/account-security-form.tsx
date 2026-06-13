@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { toast } from '@/lib/toast'
 import PasswordRotationPreference from '@/components/account/password-rotation-preference'
+import SecurityGateChecklist from '@/components/account/security-gate-checklist'
+import { FormStatusBanner, useFormStatus } from '@/components/account/form-status-banner'
 import {
   getPasswordStrengthLabel,
   type PasswordRotationDays,
@@ -25,6 +27,9 @@ type AccountSecurityFormProps = {
   initialRotationDays: number | null
   passwordExpired: boolean
   rotationRequired: boolean
+  /** When set, user was redirected here by the password gate and should continue after requirements are met. */
+  nextPath?: string
+  isGateMode?: boolean
 }
 
 export default function AccountSecurityForm({
@@ -34,6 +39,8 @@ export default function AccountSecurityForm({
   initialRotationDays,
   passwordExpired,
   rotationRequired,
+  nextPath,
+  isGateMode = false,
 }: AccountSecurityFormProps) {
   const router = useRouter()
   const [newPassword, setNewPassword] = useState('')
@@ -46,8 +53,21 @@ export default function AccountSecurityForm({
   })
   const [passwordPending, setPasswordPending] = useState(false)
   const [rotationPending, setRotationPending] = useState(false)
+  const { status: passwordStatus, setStatus: setPasswordStatus } = useFormStatus()
+  const { status: rotationStatus, setStatus: setRotationStatus } = useFormStatus()
+  const redirectedRef = useRef(false)
 
   const strength = getPasswordStrengthLabel(newPassword)
+  const gateComplete = isGateMode && !passwordExpired && !rotationRequired
+  const continuePath = nextPath?.startsWith('/') ? nextPath : '/studies'
+
+  useEffect(() => {
+    if (!gateComplete || redirectedRef.current) return
+    redirectedRef.current = true
+    toast.success('Security requirements complete', 'Continuing to the app.')
+    router.replace(continuePath)
+    router.refresh()
+  }, [gateComplete, continuePath, router])
 
   async function handlePasswordSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -56,14 +76,20 @@ export default function AccountSecurityForm({
       const fd = new FormData(e.currentTarget)
       const result = await updateAccountPassword(fd)
       if (result?.error) {
+        const message = `Password change failed: ${result.error}`
+        setPasswordStatus({ kind: 'error', message })
         toast.error('Password update failed', result.error)
         return
       }
+      const message = 'Password updated.'
+      setPasswordStatus({ kind: 'success', message })
       toast.success('Password updated')
       setNewPassword('')
       setConfirmPassword('')
       router.refresh()
     } catch {
+      const message = 'Password change failed. Try again.'
+      setPasswordStatus({ kind: 'error', message })
       toast.error('Something went wrong', 'Try again.')
     } finally {
       setPasswordPending(false)
@@ -78,12 +104,18 @@ export default function AccountSecurityForm({
       fd.set('password_rotation_days', rotationDays ? String(rotationDays) : '')
       const result = await updatePasswordRotationPreference(fd)
       if (result?.error) {
+        const message = `Could not save interval: ${result.error}`
+        setRotationStatus({ kind: 'error', message })
         toast.error('Could not save preference', result.error)
         return
       }
+      const message = `Password change interval saved (${rotationDays} days).`
+      setRotationStatus({ kind: 'success', message })
       toast.success('Password change interval saved')
       router.refresh()
     } catch {
+      const message = 'Could not save interval. Try again.'
+      setRotationStatus({ kind: 'error', message })
       toast.error('Something went wrong', 'Try again.')
     } finally {
       setRotationPending(false)
@@ -92,6 +124,14 @@ export default function AccountSecurityForm({
 
   return (
     <div className="space-y-6">
+      {isGateMode ? (
+        <SecurityGateChecklist
+          passwordOk={!passwordExpired}
+          rotationOk={!rotationRequired}
+          passwordExpired={passwordExpired}
+        />
+      ) : null}
+
       {(passwordExpired || rotationRequired) && subjectToPolicy ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
           {passwordExpired
@@ -115,7 +155,7 @@ export default function AccountSecurityForm({
 
       <Card>
         <CardHeader>
-          <CardTitle>Change password</CardTitle>
+          <CardTitle>{isGateMode && passwordExpired ? 'Set a new password' : 'Change password'}</CardTitle>
           <CardDescription>
             Use at least 12 characters. Avoid common words and your email address (
             {userEmail || 'your account email'}).
@@ -123,6 +163,7 @@ export default function AccountSecurityForm({
         </CardHeader>
         <CardContent>
           <form onSubmit={handlePasswordSubmit} className="space-y-4 max-w-md">
+            <FormStatusBanner status={passwordStatus} />
             <div className="space-y-2">
               <Label htmlFor="new_password">New password</Label>
               <Input
@@ -169,6 +210,7 @@ export default function AccountSecurityForm({
           </CardHeader>
           <CardContent>
             <form onSubmit={handleRotationSubmit} className="space-y-4">
+              <FormStatusBanner status={rotationStatus} />
               <PasswordRotationPreference
                 value={rotationDays}
                 onChange={setRotationDays}
@@ -183,6 +225,10 @@ export default function AccountSecurityForm({
             </form>
           </CardContent>
         </Card>
+      ) : null}
+
+      {isGateMode && gateComplete ? (
+        <p className="text-sm text-muted-foreground">Requirements complete — redirecting…</p>
       ) : null}
     </div>
   )

@@ -20,12 +20,27 @@ export function pathBypassesPasswordGate(pathname: string): boolean {
 
 export type PasswordGateReason = 'password_expired' | 'rotation_required'
 
+export type PasswordGateRedirect =
+  | { redirect: true; reason: PasswordGateReason; pathname: '/account/setup' | '/account/security' }
+  | { redirect: false }
+
+/** First-time credential policy belongs on account setup, not the settings security page. */
+export function passwordGatePathnameForReason(
+  reason: PasswordGateReason,
+  profile: { account_setup_completed_at?: string | null } | null | undefined
+): '/account/setup' | '/account/security' {
+  if (reason === 'rotation_required' && !profile?.account_setup_completed_at) {
+    return '/account/setup'
+  }
+  return '/account/security'
+}
+
 export async function getPasswordGateRedirect(
   supabase: SupabaseClient,
   userId: string,
   user: Parameters<typeof userSubjectToPasswordPolicy>[0],
   pathname: string
-): Promise<{ redirect: true; reason: PasswordGateReason } | { redirect: false }> {
+): Promise<PasswordGateRedirect> {
   if (pathBypassesPasswordGate(pathname)) {
     return { redirect: false }
   }
@@ -33,7 +48,7 @@ export async function getPasswordGateRedirect(
   const { data: profile } = await supabase
     .from('profiles')
     .select(
-      'password_policy_legacy, password_rotation_days, password_last_changed_at, orcid_email_locked'
+      'password_policy_legacy, password_rotation_days, password_last_changed_at, orcid_email_locked, account_setup_completed_at'
     )
     .eq('id', userId)
     .maybeSingle()
@@ -43,7 +58,11 @@ export async function getPasswordGateRedirect(
   }
 
   if (needsPasswordRotationSetup(profile, user)) {
-    return { redirect: true, reason: 'rotation_required' }
+    return {
+      redirect: true,
+      reason: 'rotation_required',
+      pathname: passwordGatePathnameForReason('rotation_required', profile),
+    }
   }
 
   if (
@@ -52,7 +71,11 @@ export async function getPasswordGateRedirect(
       rotationDays: profile?.password_rotation_days,
     })
   ) {
-    return { redirect: true, reason: 'password_expired' }
+    return {
+      redirect: true,
+      reason: 'password_expired',
+      pathname: '/account/security',
+    }
   }
 
   return { redirect: false }

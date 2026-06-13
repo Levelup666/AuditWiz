@@ -70,11 +70,14 @@ export async function proxy(request: NextRequest) {
       const passwordGate = await getPasswordGateRedirect(supabase, user.id, user, pathname)
       if (passwordGate.redirect) {
         const url = request.nextUrl.clone()
-        url.pathname = '/account/security'
+        url.pathname = passwordGate.pathname
         url.searchParams.set('reason', passwordGate.reason)
         const nextPath = pathname + request.nextUrl.search
-        if (nextPath && nextPath !== '/account/security') {
+        if (nextPath && nextPath !== passwordGate.pathname) {
           url.searchParams.set('next', nextPath)
+        }
+        if (passwordGate.pathname === '/account/setup' && passwordGate.reason === 'rotation_required') {
+          url.searchParams.set('credentials_required', '1')
         }
         return NextResponse.redirect(url)
       }

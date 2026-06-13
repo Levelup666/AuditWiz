@@ -8,8 +8,10 @@ import RecordAuditTrail from '@/components/records/record-audit-trail'
 import RecordSignatures from '@/components/records/record-signatures'
 import AmendRecordButton from '@/components/records/amend-record-button'
 import SignRecordButton from '@/components/records/sign-record-button'
+import SignRecordUnavailableButton from '@/components/records/sign-record-unavailable-button'
 import ShareRecordButton from '@/components/records/share-record-button'
 import { canCreateRecord, canApproveRecord, canReviewRecord, canShareRecord, hasStudyAdminRoleOnly } from '@/lib/supabase/permissions'
+import { hasEmailPasswordIdentity } from '@/lib/auth/is-orcid-auth'
 import DeleteRecordButton from '@/components/records/delete-record-button'
 import RecordStatusActions from '@/components/records/record-status-actions'
 import RecordDocuments from '@/components/records/record-documents'
@@ -63,6 +65,7 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
   const canReject = await canReviewRecord(user.id, id) || canSign
   const canShare = await canShareRecord(user.id, id)
   const canDelete = await hasStudyAdminRoleOnly(user.id, id)
+  const canPasswordReauthForSign = hasEmailPasswordIdentity(user)
 
   const { data: creatorProfile } = await supabase
     .from('profiles')
@@ -150,9 +153,13 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
             canSubmit={canAmend && studyIsActive}
             canReject={canReject && studyIsActive}
           />
-          {canSign && studyIsActive && (record.status === 'under_review' || record.status === 'submitted') && (
-            <SignRecordButton studyId={id} record={record} />
-          )}
+          {canSign && studyIsActive && (record.status === 'under_review' || record.status === 'submitted') ? (
+            canPasswordReauthForSign ? (
+              <SignRecordButton studyId={id} record={record} />
+            ) : (
+              <SignRecordUnavailableButton />
+            )
+          ) : null}
           {record.status === 'approved' && studyIsActive && (
             <AnchorRecordButton
               recordId={record.id}

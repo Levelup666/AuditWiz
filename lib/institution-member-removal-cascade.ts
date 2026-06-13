@@ -106,8 +106,9 @@ export async function revokeStudyAccessForRemovedInstitutionMember(params: {
   actorUserId: string
   institutionId: string
   targetUserId: string
+  removalNote: string
 }): Promise<{ ok: true } | { ok: false; message: string }> {
-  const { admin, actorUserId, institutionId, targetUserId } = params
+  const { admin, actorUserId, institutionId, targetUserId, removalNote } = params
 
   const membersOnly = await institutionMembersOnlyStudyPolicy(admin, institutionId)
   if (!membersOnly) return { ok: true }
@@ -175,6 +176,7 @@ export async function revokeStudyAccessForRemovedInstitutionMember(params: {
         role: row.role,
         revoked_by: actorUserId,
         reason: 'institution_member_removed',
+        removal_note: removalNote,
       })
       await createAuditEvent(
         row.study_id as string,
@@ -189,6 +191,7 @@ export async function revokeStudyAccessForRemovedInstitutionMember(params: {
           role: row.role,
           reason: 'institution_member_removed',
           institution_id: institutionId,
+          removal_note: removalNote,
         }
       )
     } catch (e) {

@@ -19,6 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Loader2 } from 'lucide-react'
 import { INSTITUTION_REVOKE } from '@/lib/supabase/member-revocation'
 import InstitutionMemberIdentity from '@/components/institutions/institution-member-identity'
+import MemberRemovalNoteDialog from '@/components/members/member-removal-note-dialog'
 
 interface Member {
   id: string
@@ -90,6 +91,8 @@ export default function InstitutionMembersManager({
   const [role, setRole] = useState<'admin' | 'member'>('member')
   const [addLoading, setAddLoading] = useState(false)
   const [revokingMemberId, setRevokingMemberId] = useState<string | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<Member | null>(null)
+  const [cascadeImpact, setCascadeImpact] = useState<RemovalImpactPayload | null>(null)
   const [updatingRoleMemberId, setUpdatingRoleMemberId] = useState<string | null>(null)
   const [titleDrafts, setTitleDrafts] = useState<Record<string, string>>({})
   const [savingTitleMemberId, setSavingTitleMemberId] = useState<string | null>(null)
@@ -247,14 +250,20 @@ export default function InstitutionMembersManager({
     }
   }
 
-  const handleRemoveMember = async (m: Member) => {
-    setRevokingMemberId(m.id)
+  const handleRemoveMember = async (removalNote: string) => {
+    if (!removeTarget) return
+    setRevokingMemberId(removeTarget.id)
     try {
       const patch = async (confirmStudyAccessRevocation: boolean) => {
         const res = await fetch(`/api/institutions/${institutionId}/members`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ memberId: m.id, revoked: true, confirmStudyAccessRevocation }),
+          body: JSON.stringify({
+            memberId: removeTarget.id,
+            revoked: true,
+            removalNote,
+            confirmStudyAccessRevocation,
+          }),
         })
         const data = (await res.json().catch(() => ({}))) as {
           error?: string
@@ -264,45 +273,22 @@ export default function InstitutionMembersManager({
         return { res, data }
       }
 
-      let { res, data } = await patch(false)
+      let { res, data } = await patch(Boolean(cascadeImpact))
 
       if (
         res.status === 409 &&
         data?.code === 'study_access_revocation_required' &&
-        data.impact?.applies
+        data.impact?.applies &&
+        !cascadeImpact
       ) {
-        const imp = data.impact
-        const studyLines =
-          imp.studies.length > 0
-            ? imp.studies.map((s) => `• ${s.study_title} (${s.roles.join(', ')})`).join('\n')
-            : '• (no matching study rows; access may still be revoked if policies change)'
-        const taskLine =
-          imp.openTaskAssigneeCount > 0
-            ? `\n\nThey will be unassigned from ${imp.openTaskAssigneeCount} open task(s) under those studies.`
-            : ''
-        const label = m.member_display_name?.trim() || m.email
-        const confirmed = window.confirm(
-          [
-            `${label} is on one or more draft or active studies under this institution.`,
-            'This institution only allows institution members on studies—removing them from the institution will revoke their study access completely.',
-            '',
-            'Studies:',
-            studyLines,
-            taskLine,
-            '',
-            'Records, signatures, and audit history they appear in are not deleted.',
-            '',
-            'Remove from the institution and revoke study access?',
-          ].join('\n')
-        )
-        if (!confirmed) {
-          return
-        }
-        ;({ res, data } = await patch(true))
+        setCascadeImpact(data.impact)
+        return
       }
 
       if (!res.ok) throw new Error(data.error || res.statusText)
       toast.success('Member removed')
+      setRemoveTarget(null)
+      setCascadeImpact(null)
       await fetchMembers()
     } catch (e) {
       toast.error(
@@ -622,7 +608,10 @@ export default function InstitutionMembersManager({
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleRemoveMember(m)}
+                          onClick={() => {
+                            setCascadeImpact(null)
+                            setRemoveTarget(m)
+                          }}
                           disabled={remove.disabled || revokingMemberId === m.id}
                           title={remove.title}
                         >
@@ -640,6 +629,56 @@ export default function InstitutionMembersManager({
           </>
         )}
       </div>
+
+      <MemberRemovalNoteDialog
+        open={removeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRemoveTarget(null)
+            setCascadeImpact(null)
+          }
+        }}
+        title="Remove institution member?"
+        description={
+          removeTarget ? (
+            <p>
+              Remove{' '}
+              <span className="font-medium text-foreground">
+                {removeTarget.member_display_name?.trim() || removeTarget.email}
+              </span>{' '}
+              from this institution. This is recorded in the institution audit log.
+            </p>
+          ) : null
+        }
+        extraContent={
+          cascadeImpact?.applies ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+              <p className="font-medium">Study access will also be revoked</p>
+              <p className="mt-1">
+                This institution only allows institution members on studies. Removing this person
+                will end their participation on draft or active studies listed below and unassign
+                them from {cascadeImpact.openTaskAssigneeCount} open task(s).
+              </p>
+              {cascadeImpact.studies.length > 0 ? (
+                <ul className="mt-2 list-inside list-disc space-y-0.5">
+                  {cascadeImpact.studies.map((s) => (
+                    <li key={s.study_id}>
+                      {s.study_title} ({s.roles.join(', ')})
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <p className="mt-2 text-xs">
+                Click <strong>Confirm removal</strong> again to proceed. Records and prior audit
+                history are not deleted.
+              </p>
+            </div>
+          ) : null
+        }
+        confirmLabel={cascadeImpact ? 'Confirm removal' : 'Remove member'}
+        loading={revokingMemberId !== null}
+        onConfirm={handleRemoveMember}
+      />
     </div>
   )
 }

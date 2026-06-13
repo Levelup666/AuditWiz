@@ -17,12 +17,19 @@ import {
 } from '@/lib/email/study-member-departed'
 import { notifyStudyMemberDeparted } from '@/lib/notifications/study-events'
 import { resolveMemberDisplayName } from '@/lib/profile/resolve-member-display'
+import { parseMemberRemovalNote } from '@/lib/member-removal-note'
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: studyId } = await params
+  const body = await request.json().catch(() => ({}))
+  const noteResult = parseMemberRemovalNote(body.removalNote)
+  if (!noteResult.ok) {
+    return NextResponse.json({ error: noteResult.error }, { status: 400 })
+  }
+
   const supabase = await createClient()
   const {
     data: { user },
@@ -88,7 +95,11 @@ export async function POST(
     studyId,
     actorUserId: user.id,
     member,
-    extraMetadata: { self_departed: true, reason: 'voluntary' },
+    extraMetadata: {
+      self_departed: true,
+      reason: 'voluntary',
+      removal_note: noteResult.note,
+    },
   })
 
   const { data: study } = await admin

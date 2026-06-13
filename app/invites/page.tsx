@@ -1,12 +1,17 @@
-import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Mail } from 'lucide-react'
 import { formatStudyRoleLabel } from '@/lib/study-role-display'
 
-export default async function InvitesPage() {
+interface InvitesPageProps {
+  searchParams: Promise<{ invite_error?: string }>
+}
+
+export default async function InvitesPage({ searchParams }: InvitesPageProps) {
+  const { invite_error: inviteErrorParam } = await searchParams
   const supabase = await createClient()
   const {
     data: { user },
@@ -63,8 +68,31 @@ export default async function InvitesPage() {
 
   const showSetupHint = !profile?.account_setup_completed_at
 
+  const inviteErrorMessage =
+    inviteErrorParam === 'revoked'
+      ? 'The invitation from your signup link was withdrawn. Ask the sender for a new invite if you still need access.'
+      : inviteErrorParam === 'expired'
+        ? 'The invitation from your signup link has expired. Request a new invite if you still need access.'
+        : inviteErrorParam === 'already_accepted'
+          ? 'That invitation was already accepted.'
+          : inviteErrorParam === 'not_found'
+            ? 'We could not find the invitation from your signup link. Open a fresh invite link from your email.'
+            : null
+
   return (
     <div className="space-y-6">
+      {inviteErrorMessage ? (
+        <Card className="border-amber-200 bg-amber-50/80 dark:border-amber-900 dark:bg-amber-950/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg text-amber-950 dark:text-amber-100">
+              Invitation unavailable
+            </CardTitle>
+            <CardDescription className="text-amber-900/80 dark:text-amber-200/90">
+              {inviteErrorMessage}
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      ) : null}
       {showSetupHint && (
         <Card className="border-amber-200 bg-amber-50/80 dark:border-amber-900 dark:bg-amber-950/30">
           <CardHeader className="pb-2">

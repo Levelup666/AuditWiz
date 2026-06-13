@@ -3,17 +3,9 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
-import { toast } from '@/lib/toast'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { LogOut } from 'lucide-react'
+import { toast } from '@/lib/toast'
+import MemberRemovalNoteDialog from '@/components/members/member-removal-note-dialog'
 
 interface LeaveStudyButtonProps {
   studyId: string
@@ -31,10 +23,14 @@ export default function LeaveStudyButton({
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  const handleLeave = async () => {
+  const handleLeave = async (removalNote: string) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/studies/${studyId}/members/leave`, { method: 'POST' })
+      const res = await fetch(`/api/studies/${studyId}/members/leave`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ removalNote }),
+      })
       const data = (await res.json().catch(() => ({}))) as { error?: string }
       if (!res.ok) {
         throw new Error(data.error || 'Could not leave study')
@@ -61,28 +57,24 @@ export default function LeaveStudyButton({
         <LogOut className="mr-2 h-4 w-4" />
         Leave study
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Leave this study?</DialogTitle>
-            <DialogDescription>
-              You will lose access to <span className="font-medium text-foreground">{studyTitle}</span>.
-              You will be removed from open task assignments. This action is recorded in the study audit
-              log and study admins will be notified.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={() => void handleLeave()} disabled={loading}>
-              <ButtonLoadingLabel loading={loading} loadingLabel="Leaving…">
-                Leave study
-              </ButtonLoadingLabel>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <MemberRemovalNoteDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Leave this study?"
+        description={
+          <>
+            <p>
+              You will lose access to{' '}
+              <span className="font-medium text-foreground">{studyTitle}</span>. You will be removed
+              from open task assignments. Study admins will be notified.
+            </p>
+            <p>This action is recorded in the study audit log.</p>
+          </>
+        }
+        confirmLabel="Leave study"
+        loading={loading}
+        onConfirm={handleLeave}
+      />
     </>
   )
 }

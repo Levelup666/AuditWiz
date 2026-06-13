@@ -20,6 +20,8 @@ interface AccountSetupPageProps {
     invite?: string
     pending_invite?: string
     orcid_email_required?: string
+    credentials_required?: string
+    invite_error?: string
   }>
 }
 
@@ -29,11 +31,15 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
     invite: inviteParam,
     pending_invite: pendingInviteParam,
     orcid_email_required: orcidEmailRequiredParam,
+    credentials_required: credentialsRequiredParam,
+    invite_error: inviteErrorParam,
   } = await searchParams
   const nextPath = safeAppPath(nextParam ?? null, '/invites')
   const inviteToken = inviteParam?.trim() || ''
   const pendingInviteFlow =
     pendingInviteParam === '1' || pendingInviteParam?.toLowerCase() === 'true'
+  const credentialsRequired =
+    credentialsRequiredParam === '1' || credentialsRequiredParam?.toLowerCase() === 'true'
   const inviteDriven =
     Boolean(inviteToken) || nextPath.startsWith('/invite/') || pendingInviteFlow
 
@@ -91,12 +97,25 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
 
   const hasUsableEmail = userHasUsableAuthEmail(user.email)
 
+  const inviteErrorMessage =
+    inviteErrorParam === 'revoked'
+      ? 'The invitation linked to your signup was withdrawn before you could accept it. Finish account setup below, then ask the sender for a new invite if you still need access.'
+      : inviteErrorParam === 'expired'
+        ? 'The invitation linked to your signup has expired. Finish account setup below, then request a new invite if you still need access.'
+        : inviteErrorParam === 'already_accepted'
+          ? 'That invitation was already accepted. Finish account setup below to continue.'
+          : inviteErrorParam === 'not_found'
+            ? 'We could not find the invitation from your signup link. Finish account setup below, or open a fresh invite link from your email.'
+            : null
+
   return (
     <div className="mx-auto max-w-2xl space-y-8 px-4 py-10">
       <div>
-        <p className="text-sm font-medium text-muted-foreground">Welcome</p>
+        <p className="text-sm font-medium text-muted-foreground">
+          {credentialsRequired ? 'One more step' : 'Welcome'}
+        </p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-foreground">
-          Account Setup
+          {credentialsRequired ? 'Set up your credentials' : 'Account Setup'}
         </h1>
         <p className="mt-2 text-muted-foreground">
           {showOrcidEmailInput ? (
@@ -108,11 +127,25 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
                 : ' Select a suggested address or type the one on your ORCID record.'}
             </>
           ) : inviteDriven ? (
+            orcidPrimary ? (
+              <>
+                Finish getting started after your invitation: enter your first and last name (and
+                optional nickname), then choose notification preferences. You need a legal name on
+                file before you can accept invites under <strong>Invites</strong> in the app.
+              </>
+            ) : (
+              <>
+                Finish getting started after your invitation: set a password, enter your first and
+                last name (and optional nickname), then choose notification preferences. You need a
+                password and legal name on file before you can accept invites under{' '}
+                <strong>Invites</strong> in the app.
+              </>
+            )
+          ) : credentialsRequired ? (
             <>
-              Finish getting started after your invitation: set a password, enter your first and
-              last name (and optional nickname), then choose notification preferences. You need a
-              password and legal name on file before you can accept invites under{' '}
-              <strong>Invites</strong> in the app.
+              Before you can use the app, choose a password change interval and confirm your profile
+              details. This is separate from day-to-day account settings—you only need to complete
+              it once.
             </>
           ) : orcidPrimary ? (
             <>
@@ -128,10 +161,17 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
         </p>
       </div>
 
+      {inviteErrorMessage ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">
+          {inviteErrorMessage}
+        </div>
+      ) : null}
+
       <AccountSetupForm
         nextPath={nextPath}
         inviteToken={inviteToken || undefined}
         pendingInviteFlow={pendingInviteFlow}
+        credentialsRequired={credentialsRequired}
         userEmail={user.email ?? ''}
         orcidPrimary={orcidPrimary}
         orcidEmailLocked={Boolean(profile?.orcid_email_locked)}

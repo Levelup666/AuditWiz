@@ -14,6 +14,7 @@ import {
   getInstitutionMemberRemovalImpact,
   revokeStudyAccessForRemovedInstitutionMember,
 } from '@/lib/institution-member-removal-cascade'
+import { parseMemberRemovalNote } from '@/lib/member-removal-note'
 
 export async function GET(
   request: NextRequest,
@@ -116,12 +117,13 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => ({}))
-  const { memberId, revoked, role, title, confirmStudyAccessRevocation } = body as {
+  const { memberId, revoked, role, title, confirmStudyAccessRevocation, removalNote } = body as {
     memberId?: string
     revoked?: boolean
     role?: string
     title?: string | null
     confirmStudyAccessRevocation?: boolean
+    removalNote?: string
   }
 
   const nextRole =
@@ -287,6 +289,11 @@ export async function PATCH(
     return NextResponse.json({ error: decision.message }, { status: 403 })
   }
 
+  const noteResult = parseMemberRemovalNote(removalNote)
+  if (!noteResult.ok) {
+    return NextResponse.json({ error: noteResult.error }, { status: 400 })
+  }
+
   const admin = createAdminClient()
   const { data: instMeta } = await supabase
     .from('institutions')
@@ -317,6 +324,7 @@ export async function PATCH(
       actorUserId: user.id,
       institutionId,
       targetUserId: member.user_id,
+      removalNote: noteResult.note,
     })
     if (!cascade.ok) {
       return NextResponse.json({ error: cascade.message }, { status: 500 })
@@ -338,6 +346,7 @@ export async function PATCH(
     user_id: member.user_id,
     role: member.role,
     revoked_by: user.id,
+    removal_note: noteResult.note,
   })
 
   await createAuditEvent(
@@ -348,7 +357,11 @@ export async function PATCH(
     member.user_id,
     null,
     stateHash,
-    { institution_id: institutionId, role: member.role }
+    {
+      institution_id: institutionId,
+      role: member.role,
+      removal_note: noteResult.note,
+    }
   )
 
   return NextResponse.json({ success: true })

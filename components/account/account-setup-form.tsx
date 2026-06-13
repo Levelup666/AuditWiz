@@ -10,6 +10,7 @@ import { userHasUsableAuthEmail } from '@/lib/auth/orcid-email'
 import { clearPendingOrcidContactEmail } from '@/lib/auth/pending-orcid-contact-email'
 import { OrcidContactEmailField } from '@/components/account/orcid-contact-email-field'
 import { Loader2 } from 'lucide-react'
+import { FormStatusBanner, useFormStatus } from '@/components/account/form-status-banner'
 import PasswordRotationPreference from '@/components/account/password-rotation-preference'
 import {
   getPasswordStrengthLabel,
@@ -22,6 +23,8 @@ interface AccountSetupFormProps {
   inviteToken?: string
   /** From /account/setup?…&pending_invite=1 — require password before Invites. */
   pendingInviteFlow?: boolean
+  /** From password gate — user must finish credentials before app access. */
+  credentialsRequired?: boolean
   userEmail?: string
   orcidPrimary?: boolean
   orcidEmailLocked?: boolean
@@ -47,6 +50,7 @@ export default function AccountSetupForm({
   nextPath,
   inviteToken,
   pendingInviteFlow = false,
+  credentialsRequired = false,
   userEmail,
   orcidPrimary = false,
   orcidEmailLocked = false,
@@ -72,8 +76,10 @@ export default function AccountSetupForm({
     return ''
   })
   const [pending, setPending] = useState(false)
+  const { status, setStatus } = useFormStatus()
 
   const showPasswordPolicyExtras = !orcidPrimary && !passwordPolicyLegacy
+  const requirePassword = Boolean(inviteToken || pendingInviteFlow) && !orcidPrimary
   const passwordStrength = getPasswordStrengthLabel(password)
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -88,54 +94,63 @@ export default function AccountSetupForm({
     const orcidEmail = (fdNames.get('orcid_contact_email') as string)?.trim() ?? ''
 
     if (showOrcidEmailInput && !orcidEmail) {
-      toast.error('Email required', 'Enter your contact email to continue.')
+      const message = 'Enter your contact email to continue.'
+      setStatus({ kind: 'error', message })
+      toast.error('Email required', message)
       return
     }
 
     if (showOrcidEmailInput && orcidEmailRequiresAttestation) {
       const attested = fdNames.get('orcid_email_attested') === 'on'
       if (!attested) {
-        toast.error(
-          'Confirmation required',
-          'Confirm that your entry matches the email on your ORCID account.'
-        )
+        const message = 'Confirm that your entry matches the email on your ORCID account.'
+        setStatus({ kind: 'error', message })
+        toast.error('Confirmation required', message)
         return
       }
     }
 
-    if ((inviteToken || pendingInviteFlow) && !orcidPrimary && !pwd) {
-      toast.error('Password', 'Set a password to finish account setup before you accept invites.')
+    if (requirePassword && !pwd) {
+      const message = 'Set a password to finish account setup before you continue.'
+      setStatus({ kind: 'error', message })
+      toast.error('Password', message)
       return
     }
 
     if ((inviteToken || pendingInviteFlow) && (!fn || !ln)) {
-      toast.error('Name', 'Enter your first and last name before you continue.')
+      const message = 'Enter your first and last name before you continue.'
+      setStatus({ kind: 'error', message })
+      toast.error('Name', message)
       return
     }
 
     if (pwd || confirm) {
       if (pwd !== confirm) {
+        const message = 'Password change failed: passwords do not match.'
+        setStatus({ kind: 'error', message })
         toast.error('Password', 'Passwords do not match.')
         return
       }
       const check = validatePassword(pwd, { email: userEmail })
       if (!check.ok) {
-        toast.error('Password', check.errors[0] ?? 'Password does not meet requirements.')
+        const message = check.errors[0] ?? 'Password does not meet requirements.'
+        setStatus({ kind: 'error', message: `Password change failed: ${message}` })
+        toast.error('Password', message)
         return
       }
     }
 
     if (showPasswordPolicyExtras && !initialRotationDays) {
       if (!rotationDays) {
-        toast.error(
-          'Password interval',
-          'Choose how often you want to change your password (30, 60, or 90 days).'
-        )
+        const message = 'Choose how often you want to change your password (30, 60, or 90 days).'
+        setStatus({ kind: 'error', message })
+        toast.error('Password interval', message)
         return
       }
     }
 
     setPending(true)
+    setStatus(null)
     try {
       const fd = new FormData(form)
       fd.set('next', nextPath)
@@ -146,13 +161,19 @@ export default function AccountSetupForm({
       }
       const result = await saveAccountSetup(fd)
       if (result?.error) {
-        toast.error('Could not save preferences', result.error)
+        const message = result.error
+        setStatus({ kind: 'error', message })
+        toast.error('Could not save preferences', message)
         setPending(false)
         return
       }
+      setStatus({ kind: 'success', message: 'Account setup saved. Continuing…' })
+      toast.success('Account setup saved', 'Continuing…')
       clearPendingOrcidContactEmail()
     } catch (err) {
-      toast.error('Something went wrong', err instanceof Error ? err.message : 'Try again.')
+      const message = err instanceof Error ? err.message : 'Try again.'
+      setStatus({ kind: 'error', message: `Save failed: ${message}` })
+      toast.error('Something went wrong', message)
       setPending(false)
     }
   }
@@ -165,6 +186,7 @@ export default function AccountSetupForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
+      <FormStatusBanner status={status} />
       <input type="hidden" name="next" value={nextPath} />
       {inviteToken ? <input type="hidden" name="invite_token" value={inviteToken} /> : null}
       {pendingInviteFlow ? <input type="hidden" name="pending_invite_flow" value="on" /> : null}
@@ -258,7 +280,7 @@ export default function AccountSetupForm({
         </div>
       </div>
 
-      {!orcidPrimary || inviteToken || pendingInviteFlow ? (
+      {!orcidPrimary ? (
         <div className="space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm">
           <div>
             <h2 className="text-lg font-semibold text-foreground">Password</h2>
@@ -268,10 +290,10 @@ export default function AccountSetupForm({
                   You need a password you will use to sign in before you can accept invitations in
                   the app.
                 </>
-              ) : orcidPrimary ? (
+              ) : credentialsRequired ? (
                 <>
-                  Optional: add a password if you also want to sign in with email and password. You
-                  can continue using ORCID only.
+                  Confirm or set the password you will use to sign in, then choose your change
+                  interval below.
                 </>
               ) : (
                 <>

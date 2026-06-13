@@ -182,60 +182,68 @@ export async function saveAccountSetup(formData: FormData) {
   if (inviteToken) {
     const admin = createAdminClient()
     const resolved = await lookupInviteByTokenHash(admin, hashInviteToken(inviteToken))
-    if (
-      resolved &&
-      !resolved.acceptedAt &&
-      !resolved.revokedAt &&
-      new Date(resolved.expiresAt) > new Date()
-    ) {
-      const acceptResult =
-        resolved.kind === 'study'
-          ? await acceptStudyInviteForUser(
-              supabase,
-              actor.id,
-              actor.email ?? undefined,
-              resolved.studyId,
-              resolved.inviteId
-            )
-          : await acceptInstitutionInviteForUser(
-              supabase,
-              actor.id,
-              actor.email ?? undefined,
-              resolved.institutionId,
-              resolved.inviteId
-            )
+    if (!resolved) {
+      revalidatePath('/account/setup')
+      redirect(`${next}?invite_error=not_found`)
+    }
+    if (resolved.revokedAt) {
+      revalidatePath('/account/setup')
+      redirect(`${next}?invite_error=revoked`)
+    }
+    if (resolved.acceptedAt) {
+      revalidatePath('/account/setup')
+      redirect(`${next}?invite_error=already_accepted`)
+    }
+    if (new Date(resolved.expiresAt) <= new Date()) {
+      revalidatePath('/account/setup')
+      redirect(`${next}?invite_error=expired`)
+    }
 
-      if (!acceptResult.ok) {
-        return { error: acceptResult.error }
-      }
+    const acceptResult =
+      resolved.kind === 'study'
+        ? await acceptStudyInviteForUser(
+            supabase,
+            actor.id,
+            actor.email ?? undefined,
+            resolved.studyId,
+            resolved.inviteId
+          )
+        : await acceptInstitutionInviteForUser(
+            supabase,
+            actor.id,
+            actor.email ?? undefined,
+            resolved.institutionId,
+            resolved.inviteId
+          )
 
-      if (orcidPrimary) {
-        revalidatePath('/invites')
-        revalidatePath('/account/setup')
-        let dest =
-          resolved.kind === 'study'
-            ? `/studies/${resolved.studyId}`
-            : '/institutions'
-        if (orcidEmailRequiresSessionRefresh) {
-          const sep = dest.includes('?') ? '&' : '?'
-          dest = `${dest}${sep}orcid_session_refresh=1`
-        }
-        redirect(dest)
-      }
+    if (!acceptResult.ok) {
+      return { error: acceptResult.error }
+    }
 
-      await supabase.auth.signOut()
-      const notice = encodeURIComponent(
-        'You were signed out so you can sign in again with your new password and continue.'
-      )
-      if (resolved.kind === 'study') {
-        redirect(
-          `/auth/signin?inviteNotice=${notice}&redirectedFrom=${encodeURIComponent(`/studies/${resolved.studyId}`)}`
-        )
+    if (orcidPrimary) {
+      revalidatePath('/invites')
+      revalidatePath('/account/setup')
+      let dest =
+        resolved.kind === 'study' ? `/studies/${resolved.studyId}` : '/institutions'
+      if (orcidEmailRequiresSessionRefresh) {
+        const sep = dest.includes('?') ? '&' : '?'
+        dest = `${dest}${sep}orcid_session_refresh=1`
       }
+      redirect(dest)
+    }
+
+    await supabase.auth.signOut()
+    const notice = encodeURIComponent(
+      'You were signed out so you can sign in again with your new password and continue.'
+    )
+    if (resolved.kind === 'study') {
       redirect(
-        `/auth/signin?inviteNotice=${notice}&redirectedFrom=${encodeURIComponent('/institutions')}`
+        `/auth/signin?inviteNotice=${notice}&redirectedFrom=${encodeURIComponent(`/studies/${resolved.studyId}`)}`
       )
     }
+    redirect(
+      `/auth/signin?inviteNotice=${notice}&redirectedFrom=${encodeURIComponent('/institutions')}`
+    )
   }
 
   revalidatePath('/invites')

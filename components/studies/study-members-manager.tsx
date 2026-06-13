@@ -27,6 +27,7 @@ import {
   type StudyRoleDefinitionRow,
 } from '@/lib/supabase/study-roles'
 import { formatStudyRoleLabel } from '@/lib/study-role-display'
+import MemberRemovalNoteDialog from '@/components/members/member-removal-note-dialog'
 
 function assignableRoleDefinitions(roles: StudyRoleDefinitionRow[]): StudyRoleDefinitionRow[] {
   return roles.filter(
@@ -160,6 +161,7 @@ export default function StudyMembersManager({
   const [role, setRole] = useState('member')
   const [addLoading, setAddLoading] = useState(false)
   const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<Member | null>(null)
   const [updatingRoleMemberId, setUpdatingRoleMemberId] = useState<string | null>(null)
 
   const [candidates, setCandidates] = useState<InstitutionCandidate[]>([])
@@ -354,17 +356,19 @@ export default function StudyMembersManager({
     }
   }
 
-  const handleRevoke = async (memberId: string) => {
-    setRevokingId(memberId)
+  const handleRevoke = async (removalNote: string) => {
+    if (!removeTarget) return
+    setRevokingId(removeTarget.id)
     try {
       const res = await fetch(`/api/studies/${studyId}/members`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId, revoked: true }),
+        body: JSON.stringify({ memberId: removeTarget.id, revoked: true, removalNote }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || res.statusText)
       toast.success('Member removed')
+      setRemoveTarget(null)
       fetchMembers()
       fetchCandidates()
     } catch (e) {
@@ -646,7 +650,7 @@ export default function StudyMembersManager({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => handleRevoke(m.id)}
+                    onClick={() => setRemoveTarget(m)}
                     disabled={revoke.disabled || revokingId === m.id || updatingRoleMemberId === m.id}
                     title={revoke.title}
                   >
@@ -663,6 +667,31 @@ export default function StudyMembersManager({
       )}
 
       <StudyRoleCatalog studyId={studyId} onRolesMutated={fetchRoleDefinitions} />
+
+      <MemberRemovalNoteDialog
+        open={removeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveTarget(null)
+        }}
+        title="Remove study member?"
+        description={
+          removeTarget ? (
+            <>
+              <p>
+                Remove{' '}
+                <span className="font-medium text-foreground">
+                  {removeTarget.member_display_name ?? removeTarget.email}
+                </span>{' '}
+                from this study. They will lose access immediately. This is recorded in the study
+                audit log.
+              </p>
+            </>
+          ) : null
+        }
+        confirmLabel="Remove member"
+        loading={revokingId !== null}
+        onConfirm={handleRevoke}
+      />
     </div>
   )
 }

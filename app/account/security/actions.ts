@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { hasEmailPasswordIdentity } from '@/lib/auth/is-orcid-auth'
 import {
   parseRotationDays,
   userSubjectToPasswordPolicy,
@@ -20,6 +21,10 @@ export async function updateAccountPassword(formData: FormData) {
 
   if (!user) {
     return { error: 'Not signed in' }
+  }
+
+  if (!hasEmailPasswordIdentity(user)) {
+    return { error: 'Password sign-in is not enabled for your account.' }
   }
 
   const newPassword = (formData.get('new_password') as string)?.trim() || ''
@@ -66,6 +71,8 @@ export async function updateAccountPassword(formData: FormData) {
 
   revalidatePath('/account/security')
   revalidatePath('/profile')
+  revalidatePath('/onboarding')
+  revalidatePath('/invites')
   return { success: true as const }
 }
 
@@ -108,5 +115,7 @@ export async function updatePasswordRotationPreference(formData: FormData) {
   await auditPasswordRotationPreferenceUpdated(user.id, days, previous)
 
   revalidatePath('/account/security')
+  revalidatePath('/onboarding')
+  revalidatePath('/invites')
   return { success: true as const }
 }
