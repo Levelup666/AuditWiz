@@ -19,6 +19,9 @@ import RecordAIActions from '@/components/records/record-ai-actions'
 import AnchorRecordButton from '@/components/records/anchor-record-button'
 import OrcidBadge from '@/components/profile/orcid-badge'
 import RecordCreatedBanner from '@/components/records/record-created-banner'
+import { getActiveEngagementForStudy } from '@/lib/auditor/engagement-for-study'
+import AuditorEngagementBanner from '@/components/auditor/auditor-engagement-banner'
+import AuditorAccessBeacon from '@/components/auditor/auditor-access-beacon'
 import RecordDraftForm from '@/components/records/record-draft-form'
 import RecordContentSummary from '@/components/records/record-content-summary'
 import { formatMemberListName } from '@/lib/profile/member-display-name'
@@ -66,6 +69,7 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
   const canShare = await canShareRecord(user.id, id)
   const canDelete = await hasStudyAdminRoleOnly(user.id, id)
   const canPasswordReauthForSign = hasEmailPasswordIdentity(user)
+  const engagementContext = await getActiveEngagementForStudy(supabase, user.id, id)
 
   const { data: creatorProfile } = await supabase
     .from('profiles')
@@ -110,6 +114,30 @@ export default async function RecordPage({ params, searchParams }: RecordPagePro
   return (
     <div className="space-y-6">
       <RecordCreatedBanner show={sp?.created === '1'} />
+      {engagementContext ? (
+        <>
+          <AuditorAccessBeacon
+            engagementId={engagementContext.engagementId}
+            surface="record"
+            studyId={id}
+            recordId={recordId}
+          />
+          <AuditorEngagementBanner
+            institutionName={engagementContext.institutionName}
+            scopeLabel={
+              engagementContext.scope === 'institution_wide'
+                ? 'Institution-wide'
+                : 'This study (scoped engagement)'
+            }
+            startsAt={engagementContext.startsAt}
+            expiresAt={engagementContext.expiresAt}
+            purpose={engagementContext.purpose}
+            organizationName={engagementContext.organizationName}
+            auditorTitle={engagementContext.auditorTitle}
+            referenceId={engagementContext.referenceId}
+          />
+        </>
+      ) : null}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">

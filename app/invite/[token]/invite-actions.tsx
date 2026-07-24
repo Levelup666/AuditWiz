@@ -17,6 +17,8 @@ type InviteActionsProps = {
 type InviteApiError = Error & {
   requiresAccountSetup?: boolean
   setupPath?: string
+  requiresAttestation?: boolean
+  attestationPath?: string
 }
 
 export default function InviteActions({ rawToken, canAccept }: InviteActionsProps) {
@@ -34,6 +36,9 @@ export default function InviteActions({ rawToken, canAccept }: InviteActionsProp
       const err = new Error(data.error || res.statusText) as InviteApiError
       err.requiresAccountSetup = Boolean(data.requires_account_setup)
       err.setupPath = typeof data.setup_path === 'string' ? data.setup_path : undefined
+      err.requiresAttestation = Boolean(data.requires_attestation)
+      err.attestationPath =
+        typeof data.attestation_path === 'string' ? data.attestation_path : undefined
       throw err
     }
     return data as {
@@ -62,6 +67,14 @@ export default function InviteActions({ rawToken, canAccept }: InviteActionsProp
       router.refresh()
     } catch (e) {
       const err = e as InviteApiError
+      if (err?.requiresAttestation) {
+        toast.error(
+          'Credentials required',
+          'Confirm your audit organization details to finish accepting.'
+        )
+        router.push(err.attestationPath ?? '/invites')
+        return
+      }
       if (err?.requiresAccountSetup) {
         const setupPath =
           err.setupPath ??

@@ -10,7 +10,7 @@ import { acceptStudyInviteForUser } from '@/lib/invites/accept-study'
 import { acceptInstitutionInviteForUser } from '@/lib/invites/accept-institution'
 import { safeAppPath } from '@/lib/invites/safe-redirect'
 import { profileDisplayNameForDb } from '@/lib/profile/member-display-name'
-import { isOrcidPrimaryAccount } from '@/lib/auth/is-orcid-auth'
+import { hasEmailPasswordIdentity, isOrcidPrimaryAccount } from '@/lib/auth/is-orcid-auth'
 import { setOrcidLockedEmailForUser } from '@/lib/auth/sync-orcid-email'
 import {
   userNeedsOrcidEmailCapture,
@@ -18,6 +18,7 @@ import {
 } from '@/lib/auth/orcid-email-requirements'
 import { userHasUsableAuthEmail } from '@/lib/auth/orcid-email'
 import {
+  isSupabaseSamePasswordError,
   parseRotationDays,
   userSubjectToPasswordPolicy,
   validatePassword,
@@ -52,6 +53,7 @@ export async function saveAccountSetup(formData: FormData) {
   const next = safeNextPath(nextRaw)
   const inviteToken = (formData.get('invite_token') as string)?.trim() || ''
   const pendingInviteFlow = formData.get('pending_invite_flow') === 'on'
+  const auditorInviteFlow = formData.get('auditor_invite_flow') === 'on'
   const password = (formData.get('password') as string)?.trim() || ''
   const confirmPassword = (formData.get('confirm_password') as string)?.trim() || ''
 
@@ -98,8 +100,14 @@ export async function saveAccountSetup(formData: FormData) {
 
   const hasInviteToken = Boolean(inviteToken)
   const firstCompletion = !prof?.account_setup_completed_at
+  const hasExistingPassword = hasEmailPasswordIdentity(actor)
 
-  if ((hasInviteToken || (firstCompletion && pendingInviteFlow)) && !orcidPrimary && !password) {
+  if (
+    (hasInviteToken || (firstCompletion && pendingInviteFlow)) &&
+    !orcidPrimary &&
+    !password &&
+    !hasExistingPassword
+  ) {
     return { error: 'Set a password before continuing with your invitation.' }
   }
 
@@ -123,14 +131,16 @@ export async function saveAccountSetup(formData: FormData) {
 
     const { error: passwordError } = await supabase.auth.updateUser({ password })
     if (passwordError) {
-      return { error: `Password update failed: ${passwordError.message}` }
-    }
-    if (subjectToPolicy) {
+      if (!isSupabaseSamePasswordError(passwordError)) {
+        return { error: `Password update failed: ${passwordError.message}` }
+      }
+      // Password already set during invite/signup — continue setup without failing.
+    } else if (subjectToPolicy) {
       await auditPasswordChanged(actor.id)
     }
   }
 
-  if (subjectToPolicy && !prof?.password_rotation_days) {
+  if (subjectToPolicy && !auditorInviteFlow && !prof?.password_rotation_days) {
     if (!rotationDaysParsed) {
       return {
         error: 'Choose how often you want to change your password (30, 60, or 90 days).',
@@ -208,16 +218,29 @@ export async function saveAccountSetup(formData: FormData) {
             resolved.studyId,
             resolved.inviteId
           )
-        : await acceptInstitutionInviteForUser(
-            supabase,
-            actor.id,
-            actor.email ?? undefined,
-            resolved.institutionId,
-            resolved.inviteId
-          )
+        : resolved.kind === 'audit_engagement'
+          ? null
+          : await acceptInstitutionInviteForUser(
+              supabase,
+              actor.id,
+              actor.email ?? undefined,
+              resolved.institutionId,
+              resolved.inviteId
+            )
 
-    if (!acceptResult.ok) {
-      return { error: acceptResult.error }
+    // Audit engagements require firm/credential attestation on a dedicated page.
+    if (resolved.kind === 'audit_engagement') {
+      revalidatePath('/invites')
+      revalidatePath('/account/setup')
+      let dest = `/invites/audit/${resolved.inviteId}`
+      if (orcidEmailRequiresSessionRefresh) {
+        dest = `${dest}?orcid_session_refresh=1`
+      }
+      redirect(dest)
+    }
+
+    if (!acceptResult || !acceptResult.ok) {
+      return { error: acceptResult?.error ?? 'Could not accept invitation.' }
     }
 
     if (orcidPrimary) {

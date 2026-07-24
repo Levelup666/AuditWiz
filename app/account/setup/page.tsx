@@ -4,7 +4,11 @@ import Link from 'next/link'
 import AccountSetupForm from '@/components/account/account-setup-form'
 import { Button } from '@/components/ui/button'
 import { safeAppPath } from '@/lib/invites/safe-redirect'
-import { findOrcidAuthIdentity, isOrcidPrimaryAccount } from '@/lib/auth/is-orcid-auth'
+import {
+  findOrcidAuthIdentity,
+  hasEmailPasswordIdentity,
+  isOrcidPrimaryAccount,
+} from '@/lib/auth/is-orcid-auth'
 import { extractOrcidFromSupabaseIdentity } from '@/lib/auth/orcid-id'
 import {
   userNeedsOrcidEmailCapture,
@@ -13,6 +17,11 @@ import {
 import { loadAllowedOrcidEmails } from '@/lib/auth/orcid-email-resolve'
 import { orcidEmailRequiresAttestation } from '@/lib/auth/validate-orcid-email'
 import { userHasUsableAuthEmail } from '@/lib/auth/orcid-email'
+import { userIsAuditorOnlyOnboarding } from '@/lib/auth/is-auditor-only-onboarding'
+import {
+  inviteTokenFromPath,
+  isInviteTokenPath,
+} from '@/lib/invites/auditor-invite-flow'
 
 interface AccountSetupPageProps {
   searchParams: Promise<{
@@ -22,6 +31,8 @@ interface AccountSetupPageProps {
     orcid_email_required?: string
     credentials_required?: string
     invite_error?: string
+    auditor_invite?: string
+    invite_token?: string
   }>
 }
 
@@ -33,15 +44,23 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
     orcid_email_required: orcidEmailRequiredParam,
     credentials_required: credentialsRequiredParam,
     invite_error: inviteErrorParam,
+    auditor_invite: auditorInviteParam,
+    invite_token: inviteTokenParam,
   } = await searchParams
   const nextPath = safeAppPath(nextParam ?? null, '/invites')
-  const inviteToken = inviteParam?.trim() || ''
+  const inviteTokenFromQuery = inviteTokenParam?.trim() || ''
+  const inviteTokenFromNext = inviteTokenFromPath(nextPath) ?? ''
+  const inviteToken = inviteTokenFromQuery || inviteParam?.trim() || inviteTokenFromNext
+  const auditorInviteFlow =
+    auditorInviteParam === '1' ||
+    auditorInviteParam?.toLowerCase() === 'true' ||
+    isInviteTokenPath(nextPath)
   const pendingInviteFlow =
     pendingInviteParam === '1' || pendingInviteParam?.toLowerCase() === 'true'
   const credentialsRequired =
     credentialsRequiredParam === '1' || credentialsRequiredParam?.toLowerCase() === 'true'
   const inviteDriven =
-    Boolean(inviteToken) || nextPath.startsWith('/invite/') || pendingInviteFlow
+    Boolean(inviteToken) || nextPath.startsWith('/invite/') || pendingInviteFlow || auditorInviteFlow
 
   const supabase = await createClient()
   const {
@@ -97,6 +116,10 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
 
   const hasUsableEmail = userHasUsableAuthEmail(user.email)
 
+  const auditorOnlyOnboarding = auditorInviteFlow
+    ? await userIsAuditorOnlyOnboarding(supabase, user.id, user.email ?? undefined)
+    : false
+
   const inviteErrorMessage =
     inviteErrorParam === 'revoked'
       ? 'The invitation linked to your signup was withdrawn before you could accept it. Finish account setup below, then ask the sender for a new invite if you still need access.'
@@ -127,7 +150,13 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
                 : ' Select a suggested address or type the one on your ORCID record.'}
             </>
           ) : inviteDriven ? (
-            orcidPrimary ? (
+            auditorOnlyOnboarding ? (
+              <>
+                Finish account setup for your audit engagement: set a password (if you signed up
+                with email), enter your first and last name, then you will return to your invitation
+                to accept read-only access.
+              </>
+            ) : orcidPrimary ? (
               <>
                 Finish getting started after your invitation: enter your first and last name (and
                 optional nickname), then choose notification preferences. You need a legal name on
@@ -171,6 +200,8 @@ export default async function AccountSetupPage({ searchParams }: AccountSetupPag
         nextPath={nextPath}
         inviteToken={inviteToken || undefined}
         pendingInviteFlow={pendingInviteFlow}
+        auditorInviteFlow={auditorOnlyOnboarding}
+        hasExistingPassword={hasEmailPasswordIdentity(user)}
         credentialsRequired={credentialsRequired}
         userEmail={user.email ?? ''}
         orcidPrimary={orcidPrimary}

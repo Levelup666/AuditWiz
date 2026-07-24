@@ -8,6 +8,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { formatPendingInviteExpiryForEmail } from '@/lib/invites/pending-invite-expiry'
 import { getJwtRoleFromSecret } from '@/lib/supabase/jwt-role-from-secret'
 import { sendTransactionalEmail } from '@/lib/email/send-transactional'
+import { auditorSetupPathForToken } from '@/lib/invites/auditor-invite-flow'
 
 function appBaseUrl(): string {
   if (process.env.NEXT_PUBLIC_APP_URL) {
@@ -19,7 +20,7 @@ function appBaseUrl(): string {
   return 'http://localhost:3000'
 }
 
-export type PendingInviteEmailKind = 'study' | 'institution'
+export type PendingInviteEmailKind = 'study' | 'institution' | 'audit_engagement'
 
 function truncateAuthMessage(msg: string, max = 400): string {
   const t = msg.replace(/\s+/g, ' ').trim()
@@ -42,6 +43,7 @@ function supabaseInviteFailedUserMessage(
 
 export type PendingInviteEmailResult = {
   sent: boolean
+  kind?: PendingInviteEmailKind
   /** How the message was delivered when sent is true */
   channel?: 'supabase' | 'postmark'
   reason?: 'no_postmark_token' | 'no_from_address' | 'postmark_error'
@@ -73,11 +75,17 @@ export function inviteEmailDispatchFields(emailResult: PendingInviteEmailResult)
 
   const emailDispatchMessage = emailResult.sent
     ? audience === 'existing_auth_user'
-      ? 'Pending invite created. We emailed them to sign in and open Invites to accept (direct link included in the message).'
+      ? emailResult.kind === 'audit_engagement'
+        ? 'Audit engagement created. We emailed them to sign in and accept their read-only engagement (direct link included).'
+        : 'Pending invite created. We emailed them to sign in and open Invites to accept (direct link included in the message).'
       : emailResult.channel === 'supabase'
-        ? 'An invite link was sent via Supabase Auth. They will land on account setup first, then can open Invites to accept.'
+        ? emailResult.kind === 'audit_engagement'
+          ? 'An audit engagement invite was sent via Supabase Auth. They will complete account setup, then accept read-only access.'
+          : 'An invite link was sent via Supabase Auth. They will land on account setup first, then can open Invites to accept.'
         : audience === 'new_email'
-          ? 'Pending invite created. We emailed them an invitation link to sign up or sign in and complete setup.'
+          ? emailResult.kind === 'audit_engagement'
+            ? 'Audit engagement created. We emailed them a link to sign up or sign in and accept read-only access.'
+            : 'Pending invite created. We emailed them an invitation link to sign up or sign in and complete setup.'
           : undefined
     : emailResult.reason === 'no_postmark_token'
       ? detail === 'existing_user_notify_no_postmark'
@@ -100,6 +108,18 @@ export function inviteEmailDispatchFields(emailResult: PendingInviteEmailResult)
     email_dispatch_detail: detail ?? null,
     email_supabase_error: emailResult.supabaseAuthError ?? null,
   }
+}
+
+function inviteKindLabel(kind: PendingInviteEmailKind): string {
+  if (kind === 'audit_engagement') return 'audit engagement'
+  if (kind === 'institution') return 'institution'
+  return 'study'
+}
+
+function inviteSubject(kind: PendingInviteEmailKind, contextLabel: string): string {
+  if (kind === 'audit_engagement') return `Audit engagement invitation: ${contextLabel}`
+  if (kind === 'study') return `Pending study invite: ${contextLabel}`
+  return `Pending institution invite: ${contextLabel}`
 }
 
 function isSupabaseAlreadyRegisteredError(
@@ -148,24 +168,36 @@ export async function sendPendingInviteEmail(params: {
   const base = appBaseUrl()
   const invitePath = inviteRawToken ? `/invite/${inviteRawToken}` : null
   const inviteUrl = invitePath ? `${base}${invitePath}` : `${base}/invites`
-  /** New invitees must finish credentials before accepting; magic link lands here first. */
-  const setupFirstPath = '/account/setup?next=/invites&pending_invite=1'
+  const setupFirstPath =
+    kind === 'audit_engagement' && inviteRawToken
+      ? auditorSetupPathForToken(inviteRawToken)
+      : '/account/setup?next=/invites&pending_invite=1'
   const callbackNext = `/auth/callback?next=${encodeURIComponent(setupFirstPath)}`
   const redirectTo = `${base}${callbackNext.startsWith('/') ? callbackNext : '/' + callbackNext}`
 
   const setupUrl = `${base}${setupFirstPath}`
 
   const invitesUrl = `${base}/invites`
-  const subject =
-    kind === 'study'
-      ? `Pending study invite: ${contextLabel}`
-      : `Pending institution invite: ${contextLabel}`
+  const subject = inviteSubject(kind, contextLabel)
 
   const expiryLine = expiresAtIso ? formatPendingInviteExpiryForEmail(expiresAtIso) : ''
   const expiryNote = expiryLine ? `\n\n${expiryLine}` : ''
 
+  const kindLabel = inviteKindLabel(kind)
+  const readOnlyNote =
+    kind === 'audit_engagement'
+      ? '\n\nThis is read-only audit access. You can review records, signatures, anchors, and audit logs in scope—you cannot edit, sign, approve, or anchor anything.'
+      : ''
+
   const text = invitePath
-    ? `You have a pending ${kind} invitation on AuditWiz (${contextLabel}).
+    ? kind === 'audit_engagement'
+      ? `You have been invited to a read-only audit engagement on AuditWiz (${contextLabel}).
+
+Open this link to sign in or create your account, complete setup, and accept the engagement:
+${inviteUrl}
+
+If you already have an account, sign in with the invited email address.${readOnlyNote}${expiryNote}`
+      : `You have a pending ${kindLabel} invitation on AuditWiz (${contextLabel}).
 
 Step 1 — Sign in or create your account, then complete account setup (password, legal name, preferences). Use this link right after you open the sign-in link from your email:
 ${setupUrl}
@@ -175,7 +207,7 @@ ${invitesUrl}
 
 Optional — You can also open this invite summary link while signed in (you will be sent to account setup first if you still need credentials):
 ${inviteUrl}${expiryNote}`
-    : `You have a pending ${kind} invitation on AuditWiz (${contextLabel}).
+    : `You have a pending ${kindLabel} invitation on AuditWiz (${contextLabel}).
 
 After signing in, finish account setup (password and notification preferences), then open Invites:
 ${setupUrl}
@@ -222,6 +254,7 @@ ${invitesUrl}${expiryNote}`
         return {
           sent: true,
           channel: 'supabase',
+          kind,
           ...(kind === 'study' ? { studyInviteAudience: 'new_email' as const } : {}),
         }
       }
@@ -247,6 +280,7 @@ ${invitesUrl}${expiryNote}`
           return {
             sent: true,
             channel: 'supabase',
+            kind,
             ...(kind === 'study' ? { studyInviteAudience: 'new_email' as const } : {}),
           }
         }
@@ -278,6 +312,7 @@ ${invitesUrl}${expiryNote}`
   return mapTransactionalFailure(postmarkResult, {
     transactionalFallbackDetail,
     supabaseAuthError,
+    kind,
     ...(kind === 'study' ? { studyInviteAudience: 'new_email' as const } : {}),
   })
 }
@@ -301,14 +336,28 @@ export async function sendExistingUserPendingInviteNotification(params: {
   const invitesUrl = `${base}/invites`
 
   const subject =
-    kind === 'study'
-      ? `Study invitation: ${contextLabel}`
-      : `Institution invitation: ${contextLabel}`
+    kind === 'audit_engagement'
+      ? `Audit engagement invitation: ${contextLabel}`
+      : kind === 'study'
+        ? `Study invitation: ${contextLabel}`
+        : `Institution invitation: ${contextLabel}`
 
   const expiryLine = expiresAtIso ? formatPendingInviteExpiryForEmail(expiresAtIso) : ''
   const expiryNote = expiryLine ? `\n\n${expiryLine}` : ''
 
-  const text = `You have a pending ${kind} invitation on AuditWiz (${contextLabel}).
+  const kindLabel = inviteKindLabel(kind)
+  const text =
+    kind === 'audit_engagement'
+      ? `You have a pending audit engagement on AuditWiz (${contextLabel}).
+
+You already have an account. Sign in with the invited email and accept your read-only audit engagement:
+${inviteUrl}
+
+You can also open Pending Invites in the app:
+${invitesUrl}
+
+This access is read-only—you cannot edit, sign, approve, or anchor records.${expiryNote}`
+      : `You have a pending ${kindLabel} invitation on AuditWiz (${contextLabel}).
 
 You already have an account. Sign in and open Invites in the app to review and accept:
 ${invitesUrl}
@@ -320,6 +369,7 @@ ${inviteUrl}${expiryNote}`
   return mapTransactionalFailure(postmarkResult, {
     transactionalFallbackDetail: 'existing_user_notify_no_postmark',
     studyInviteAudience: 'existing_auth_user',
+    kind,
   })
 }
 

@@ -8,6 +8,7 @@ import { getDashboardMemberStats } from '@/lib/dashboard/member-stats'
 import { getRecentNotifications } from '@/lib/notifications'
 import NotificationsList from '@/components/dashboard/notifications-list'
 import { canUserCreateStudy } from '@/lib/supabase/permissions'
+import { userIsAuditorPrimary } from '@/lib/auditor/is-auditor-primary'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -19,6 +20,10 @@ export default async function DashboardPage() {
     redirect('/auth/signin')
   }
   const userId = user!.id
+
+  if (await userIsAuditorPrimary(supabase, userId)) {
+    redirect('/auditor')
+  }
 
   const notifications = await getRecentNotifications(userId, 10)
   const showNewStudy = await canUserCreateStudy(userId)

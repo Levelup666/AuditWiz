@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import StudiesList from '@/components/studies/studies-list'
 import { canUserCreateStudy } from '@/lib/supabase/permissions'
+import { userIsAuditorPrimary } from '@/lib/auditor/is-auditor-primary'
+import { redirect } from 'next/navigation'
 
 interface StudiesPageProps {
   searchParams: Promise<{ status?: string; institution?: string }>
@@ -18,6 +20,10 @@ export default async function StudiesPage({ searchParams }: StudiesPageProps) {
 
   if (!user) {
     return null
+  }
+
+  if (await userIsAuditorPrimary(supabase, user.id)) {
+    redirect('/auditor')
   }
 
   const sp = await searchParams

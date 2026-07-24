@@ -10,17 +10,20 @@ export default async function SignUpPage({
   searchParams: Promise<{ email?: string; redirectedFrom?: string }>
 }) {
   const params = await searchParams
+  const email = params.email?.trim() ?? ''
+  const redirectedFrom = safeAppPath(params.redirectedFrom, '')
+
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
   if (user) {
-    redirect('/studies')
+    const dest = redirectedFrom && redirectedFrom.startsWith('/invite/')
+      ? redirectedFrom
+      : '/studies'
+    redirect(dest)
   }
-
-  const email = params.email?.trim() ?? ''
-  const redirectedFrom = safeAppPath(params.redirectedFrom, '')
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">

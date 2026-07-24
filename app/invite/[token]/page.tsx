@@ -14,6 +14,10 @@ import { findUserIdByEmail } from '@/lib/supabase/find-user-by-email'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import InviteActions from './invite-actions'
+import {
+  auditorSetupPathForToken,
+  auditorSetupPathFromInvitePath,
+} from '@/lib/invites/auditor-invite-flow'
 
 interface PageProps {
   params: Promise<{ token: string }>
@@ -144,6 +148,11 @@ export default async function InviteResolutionPage({ params }: PageProps) {
   }
 
   const redirectBack = `/invite/${rawToken}`
+  const isAuditEngagement = resolved.kind === 'audit_engagement'
+  const setupPath =
+    isAuditEngagement
+      ? auditorSetupPathForToken(rawToken)
+      : `/account/setup?next=${encodeURIComponent(redirectBack)}&invite_token=${encodeURIComponent(rawToken)}`
   const signInHref = `/auth/signin?redirectedFrom=${encodeURIComponent(redirectBack)}&inviteNotice=${encodeURIComponent('This invitation is linked to your account. Please sign in to continue.')}`
   const signupEmail =
     resolved.kind === 'institution' ||
@@ -151,8 +160,7 @@ export default async function InviteResolutionPage({ params }: PageProps) {
     resolved.email
       ? resolved.email || ''
       : ''
-  const setupFirstReturn = `/account/setup?next=/invites&pending_invite=1`
-  const signUpHref = `/auth/signup?redirectedFrom=${encodeURIComponent(setupFirstReturn)}${signupEmail ? `&email=${encodeURIComponent(signupEmail)}` : ''}`
+  const signUpHref = `/auth/signup?redirectedFrom=${encodeURIComponent(redirectBack)}${signupEmail ? `&email=${encodeURIComponent(signupEmail)}` : ''}`
 
   if (!user) {
     let accountExists = false
@@ -190,9 +198,19 @@ export default async function InviteResolutionPage({ params }: PageProps) {
             )}
             {!accountExists && resolved.email && (
               <p className="text-sm text-muted-foreground">
-                No account yet for this email—create one with the same address. You will set your
-                password and name on the next screen, then open <strong>Invites</strong> in the app
-                to accept this invitation.
+                {isAuditEngagement ? (
+                  <>
+                    No account yet for this email—create one with the same address. After you set
+                    your password and name, you will return here to accept your read-only audit
+                    engagement.
+                  </>
+                ) : (
+                  <>
+                    No account yet for this email—create one with the same address. You will set
+                    your password and name on the next screen, then open{' '}
+                    <strong>Invites</strong> in the app to accept this invitation.
+                  </>
+                )}
               </p>
             )}
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -228,7 +246,7 @@ export default async function InviteResolutionPage({ params }: PageProps) {
     !inviteeProfile.last_name?.trim()
 
   if (matches && setupRequired) {
-    redirect('/account/setup?next=/invites&pending_invite=1')
+    redirect(setupPath)
   }
 
   if (!matches) {

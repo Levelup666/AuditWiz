@@ -6,23 +6,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canManageInstitution } from '@/lib/supabase/permissions'
-import { createAuditEvent } from '@/lib/supabase/audit'
-import { generateHash } from '@/lib/crypto'
-import { generateInviteToken } from '@/lib/invites/token'
+import { inviteEmailDispatchFields, type PendingInviteEmailResult } from '@/lib/email/pending-invite-notification'
 import {
-  inviteEmailDispatchFields,
-  sendPendingInviteEmail,
-} from '@/lib/email/pending-invite-notification'
-
-type EngagementScope = 'institution_wide' | 'specific_studies'
+  issueAuditEngagement,
+  parseAuditorEmails,
+  type EngagementScope,
+} from '@/lib/auditor/issue-audit-engagement'
 
 const MIN_DURATION_DAYS = 1
 const MAX_DURATION_DAYS = 365
 const DEFAULT_DURATION_DAYS = 30
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase()
-}
 
 function clampDurationDays(raw: unknown): number {
   const n = Number(raw)
@@ -51,7 +44,7 @@ export async function GET(
   const { data: rows, error } = await supabase
     .from('audit_engagements')
     .select(
-      `id, auditor_email, auditor_user_id, scope, purpose,
+      `id, auditor_email, auditor_user_id, scope, purpose, batch_id,
        starts_at, expires_at, accepted_at, revoked_at, revocation_reason,
        granted_by, last_sent_at, resend_count, invite_first_opened_at, created_at`
     )
@@ -137,7 +130,7 @@ export async function POST(
 
   const { data: institution } = await supabase
     .from('institutions')
-    .select('id, name')
+    .select('id, name, metadata')
     .eq('id', institutionId)
     .single()
   if (!institution) {
@@ -145,14 +138,14 @@ export async function POST(
   }
 
   const body = await request.json().catch(() => ({}))
-  const auditorEmail = typeof body.auditor_email === 'string' ? body.auditor_email.trim() : ''
+  const auditorEmails = parseAuditorEmails(body)
   const scope = body.scope as EngagementScope | undefined
   const purpose = typeof body.purpose === 'string' ? body.purpose.trim() : ''
   const durationDays = clampDurationDays(body.duration_days)
   const studyIds = Array.isArray(body.study_ids) ? (body.study_ids as unknown[]) : []
 
-  if (!auditorEmail) {
-    return NextResponse.json({ error: 'auditor_email is required' }, { status: 400 })
+  if (auditorEmails.length === 0) {
+    return NextResponse.json({ error: 'auditor_email or auditor_emails is required' }, { status: 400 })
   }
   if (scope !== 'institution_wide' && scope !== 'specific_studies') {
     return NextResponse.json({ error: 'scope must be institution_wide or specific_studies' }, { status: 400 })
@@ -186,131 +179,93 @@ export async function POST(
     }
   }
 
-  const { rawToken, tokenHash } = generateInviteToken()
-  const startsAt = new Date()
-  const expiresAt = new Date(startsAt.getTime())
-  expiresAt.setUTCDate(expiresAt.getUTCDate() + durationDays)
+  const overrideStudyMemberConflict =
+    body.override_study_member_conflict === true ||
+    body.override_study_member_conflict === 'true'
+  const overrideReason =
+    typeof body.override_reason === 'string' ? body.override_reason.trim() : ''
 
-  // Reject if a non-revoked engagement for this email already exists (one open invite per
-  // (institution, email) — the partial unique index also enforces this in DB).
-  const emailNorm = normalizeEmail(auditorEmail)
-  const { data: existing } = await supabase
-    .from('audit_engagements')
-    .select('id, accepted_at, expires_at')
-    .eq('institution_id', institutionId)
-    .ilike('auditor_email', emailNorm)
-    .is('revoked_at', null)
-  const open = (existing ?? []).find((r) => !r.accepted_at || new Date(r.expires_at) > new Date())
-  if (open) {
+  const batchId = crypto.randomUUID()
+  const admin = createAdminClient()
+  const created: Array<{
+    engagement_id: string
+    auditor_email: string
+    expires_at: string
+    emailResult: PendingInviteEmailResult
+  }> = []
+  const skipped: Array<{ auditor_email: string; error: string; code?: string }> = []
+
+  for (const auditorEmail of auditorEmails) {
+    const result = await issueAuditEngagement(supabase, admin, {
+      institutionId,
+      institutionName: institution.name,
+      auditorEmail,
+      scope,
+      purpose,
+      durationDays,
+      studyIds: cleanStudyIds,
+      grantedBy: user.id,
+      batchId: auditorEmails.length > 1 ? batchId : null,
+      institutionMetadata: institution.metadata,
+      overrideStudyMemberConflict,
+      overrideReason,
+    })
+
+    if (!result.ok) {
+      skipped.push({
+        auditor_email: auditorEmail,
+        error: result.error,
+        code: result.code,
+      })
+      continue
+    }
+
+    created.push({
+      engagement_id: result.engagementId,
+      auditor_email: auditorEmail,
+      expires_at: result.expiresAt,
+      emailResult: result.email,
+    })
+  }
+
+  if (created.length === 0) {
+    const first = skipped[0]
+    const status =
+      first?.code === 'duplicate_engagement' || first?.code === 'study_member_conflict'
+        ? 409
+        : first?.code === 'institution_member_conflict' ||
+            first?.code === 'existing_account_not_allowed'
+          ? 403
+          : 500
     return NextResponse.json(
       {
-        error: 'An audit engagement for this email already exists. Resend or revoke it first.',
-        code: 'duplicate_engagement',
-        engagement_id: open.id,
+        error: first?.error ?? 'Failed to create engagements',
+        code: first?.code,
+        skipped,
       },
-      { status: 409 }
+      { status }
     )
   }
 
-  const { data: inserted, error: insertError } = await supabase
-    .from('audit_engagements')
-    .insert({
-      institution_id: institutionId,
-      auditor_email: auditorEmail,
-      scope,
-      purpose: purpose.length > 0 ? purpose : null,
-      starts_at: startsAt.toISOString(),
-      expires_at: expiresAt.toISOString(),
-      granted_by: user.id,
-      token_hash: tokenHash,
-      last_sent_at: startsAt.toISOString(),
-      resend_count: 0,
-    })
-    .select('id')
-    .single()
-
-  if (insertError || !inserted) {
-    return NextResponse.json({ error: insertError?.message ?? 'Failed to create engagement' }, { status: 500 })
-  }
-
-  if (scope === 'specific_studies' && cleanStudyIds.length > 0) {
-    const rows = cleanStudyIds.map((sid) => ({ engagement_id: inserted.id, study_id: sid }))
-    const { error: linkErr } = await supabase.from('audit_engagement_studies').insert(rows)
-    if (linkErr) {
-      // Best effort cleanup: revoke the engagement so we don't leave a half-set up grant.
-      await supabase
-        .from('audit_engagements')
-        .update({ revoked_at: new Date().toISOString(), revocation_reason: 'study_link_failed' })
-        .eq('id', inserted.id)
-      return NextResponse.json({ error: linkErr.message }, { status: 500 })
-    }
-  }
-
-  const grantedHash = await generateHash({
-    engagement_id: inserted.id,
-    institution_id: institutionId,
-    auditor_email: auditorEmail,
-    scope,
-    starts_at: startsAt.toISOString(),
-    expires_at: expiresAt.toISOString(),
-    study_ids: cleanStudyIds,
-  })
-  await createAuditEvent(
-    null,
-    user.id,
-    'audit_engagement_granted',
-    'audit_engagement',
-    inserted.id,
-    null,
-    grantedHash,
-    {
-      institution_id: institutionId,
-      institution_name: institution.name,
-      auditor_email: auditorEmail,
-      scope,
-      purpose: purpose.length > 0 ? purpose : null,
-      duration_days: durationDays,
-      study_ids: scope === 'specific_studies' ? cleanStudyIds : [],
-    }
-  )
-
-  const inviteCreatedHash = await generateHash({
-    engagement_id: inserted.id,
-    institution_id: institutionId,
-    action: 'invite_created',
-    kind: 'audit_engagement',
-  })
-  await createAuditEvent(
-    null,
-    user.id,
-    'invite_created',
-    'audit_engagement',
-    inserted.id,
-    null,
-    inviteCreatedHash,
-    {
-      institution_id: institutionId,
-      auditor_email: auditorEmail,
-      kind: 'audit_engagement',
-      scope,
-    }
-  )
-
-  const admin = createAdminClient()
-  const emailResult = await sendPendingInviteEmail({
-    to: auditorEmail,
-    kind: 'institution',
-    contextLabel: `${institution.name} (audit engagement)`,
-    inviteRawToken: rawToken,
-    expiresAtIso: expiresAt.toISOString(),
-    supabaseAdmin: admin,
-  })
+  const firstCreated = created[0]
+  const dispatchFields = inviteEmailDispatchFields(firstCreated.emailResult)
 
   return NextResponse.json({
     success: true,
-    engagement_id: inserted.id,
-    expires_at: expiresAt.toISOString(),
-    starts_at: startsAt.toISOString(),
-    ...inviteEmailDispatchFields(emailResult),
+    batch_id: auditorEmails.length > 1 ? batchId : null,
+    created: created.map((c) => ({
+      engagement_id: c.engagement_id,
+      auditor_email: c.auditor_email,
+      expires_at: c.expires_at,
+      email_dispatched: inviteEmailDispatchFields(c.emailResult).email_dispatched,
+    })),
+    skipped,
+    engagement_id: firstCreated.engagement_id,
+    expires_at: firstCreated.expires_at,
+    ...dispatchFields,
+    email_dispatch_message:
+      created.length > 1
+        ? `Created ${created.length} audit engagements.${skipped.length ? ` ${skipped.length} skipped.` : ''}`
+        : dispatchFields.email_dispatch_message,
   })
 }

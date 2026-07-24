@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   isPasswordRotationExpired,
+  isSupabaseSamePasswordError,
   needsPasswordRotationSetup,
   parseRotationDays,
   userSubjectToPasswordPolicy,
@@ -104,6 +105,20 @@ describe('isPasswordRotationExpired', () => {
         now: new Date('2026-02-01'),
       })
     ).toBe(false)
+  })
+})
+
+describe('isSupabaseSamePasswordError', () => {
+  it('detects same_password code', () => {
+    expect(isSupabaseSamePasswordError({ code: 'same_password', message: 'x' })).toBe(true)
+  })
+
+  it('detects message wording', () => {
+    expect(
+      isSupabaseSamePasswordError({
+        message: 'New password should be different from the old password.',
+      })
+    ).toBe(true)
   })
 })
 

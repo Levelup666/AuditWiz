@@ -10,6 +10,9 @@ const PASSWORD_GATE_ALLOW_PREFIXES = [
   '/account/setup',
   '/account/security',
   '/api/auth/',
+  '/invite/',
+  '/auditor',
+  '/invites',
 ] as const
 
 export function pathBypassesPasswordGate(pathname: string): boolean {

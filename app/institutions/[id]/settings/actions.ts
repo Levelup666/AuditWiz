@@ -10,6 +10,19 @@ import {
   institutionAllowsExternalCollaborators,
   parseAllowExternalFromForm,
 } from '@/lib/institution-collaboration'
+import {
+  institutionRequiresFreshEmailForAuditorInvites,
+  parseRequireFreshAuditorEmailFromForm,
+} from '@/lib/auditor/auditor-invite-policy'
+import {
+  AUDITOR_REFERENCE_ID_FORMAT_KEY,
+  AUDITOR_REFERENCE_ID_LABEL_KEY,
+  AUDITOR_REFERENCE_ID_REQUIRED_KEY,
+  getAuditorReferenceIdPolicy,
+  parseAuditorReferenceIdFormatFromForm,
+  parseAuditorReferenceIdLabelFromForm,
+  parseAuditorReferenceIdRequiredFromForm,
+} from '@/lib/auditor/auditor-credential-policy'
 
 export async function updateInstitution(
   institutionId: string,
@@ -36,6 +49,30 @@ export async function updateInstitution(
   const allowExternalCollaborators = parseAllowExternalFromForm(
     formData.get('allow_external_collaborators')?.toString()
   )
+  const auditorInvitesRequireFreshEmail = parseRequireFreshAuditorEmailFromForm(
+    formData.get('auditor_invites_require_fresh_email')?.toString()
+  )
+  const auditorReferenceIdFormat = parseAuditorReferenceIdFormatFromForm(
+    formData.get('auditor_reference_id_format')?.toString()
+  )
+  const auditorReferenceIdLabel = parseAuditorReferenceIdLabelFromForm(
+    formData.get('auditor_reference_id_label')?.toString()
+  )
+  const auditorReferenceIdRequired = parseAuditorReferenceIdRequiredFromForm(
+    formData.get('auditor_reference_id_required')?.toString()
+  )
+
+  if (auditorReferenceIdFormat) {
+    try {
+      // eslint-disable-next-line no-new
+      new RegExp(`^(?:${auditorReferenceIdFormat})$`)
+    } catch {
+      return {
+        error:
+          'Auditor reference ID format is not a valid regular expression. Example: ENG-\\d{4}',
+      }
+    }
+  }
 
   if (!name) {
     return { error: 'Name is required' }
@@ -86,6 +123,10 @@ export async function updateInstitution(
     ...prevMeta,
     research_field: researchField,
     allow_external_collaborators: allowExternalCollaborators,
+    auditor_invites_require_fresh_email: auditorInvitesRequireFreshEmail,
+    [AUDITOR_REFERENCE_ID_FORMAT_KEY]: auditorReferenceIdFormat,
+    [AUDITOR_REFERENCE_ID_LABEL_KEY]: auditorReferenceIdLabel,
+    [AUDITOR_REFERENCE_ID_REQUIRED_KEY]: auditorReferenceIdRequired,
   }
 
   const { error } = await supabase
@@ -110,6 +151,9 @@ export async function updateInstitution(
     domain,
     research_field: researchField,
     allow_external_collaborators: allowExternalCollaborators,
+    auditor_invites_require_fresh_email: auditorInvitesRequireFreshEmail,
+    auditor_reference_id_format: auditorReferenceIdFormat,
+    auditor_reference_id_required: auditorReferenceIdRequired,
   })
 
   await createAuditEvent(
@@ -126,6 +170,9 @@ export async function updateInstitution(
       domain,
       research_field: researchField,
       allow_external_collaborators: allowExternalCollaborators,
+      auditor_invites_require_fresh_email: auditorInvitesRequireFreshEmail,
+      auditor_reference_id_format: auditorReferenceIdFormat,
+      auditor_reference_id_required: auditorReferenceIdRequired,
     }
   )
 

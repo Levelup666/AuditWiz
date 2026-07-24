@@ -23,6 +23,10 @@ interface AccountSetupFormProps {
   inviteToken?: string
   /** From /account/setup?…&pending_invite=1 — require password before Invites. */
   pendingInviteFlow?: boolean
+  /** Auditor-only onboarding — minimal copy, optional notification hiding. */
+  auditorInviteFlow?: boolean
+  /** User already has email/password from invite signup — re-entry optional. */
+  hasExistingPassword?: boolean
   /** From password gate — user must finish credentials before app access. */
   credentialsRequired?: boolean
   userEmail?: string
@@ -50,6 +54,8 @@ export default function AccountSetupForm({
   nextPath,
   inviteToken,
   pendingInviteFlow = false,
+  auditorInviteFlow = false,
+  hasExistingPassword = false,
   credentialsRequired = false,
   userEmail,
   orcidPrimary = false,
@@ -78,8 +84,9 @@ export default function AccountSetupForm({
   const [pending, setPending] = useState(false)
   const { status, setStatus } = useFormStatus()
 
-  const showPasswordPolicyExtras = !orcidPrimary && !passwordPolicyLegacy
-  const requirePassword = Boolean(inviteToken || pendingInviteFlow) && !orcidPrimary
+  const showPasswordPolicyExtras = !orcidPrimary && !passwordPolicyLegacy && !auditorInviteFlow
+  const requirePassword =
+    Boolean(inviteToken || pendingInviteFlow) && !orcidPrimary && !hasExistingPassword
   const passwordStrength = getPasswordStrengthLabel(password)
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -190,6 +197,7 @@ export default function AccountSetupForm({
       <input type="hidden" name="next" value={nextPath} />
       {inviteToken ? <input type="hidden" name="invite_token" value={inviteToken} /> : null}
       {pendingInviteFlow ? <input type="hidden" name="pending_invite_flow" value="on" /> : null}
+      {auditorInviteFlow ? <input type="hidden" name="auditor_invite_flow" value="on" /> : null}
 
       {showContactSection ? (
         <div className="space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm">
@@ -285,7 +293,19 @@ export default function AccountSetupForm({
           <div>
             <h2 className="text-lg font-semibold text-foreground">Password</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {inviteToken || pendingInviteFlow ? (
+              {auditorInviteFlow ? (
+                hasExistingPassword ? (
+                  <>
+                    You already set a password when you signed in. Leave these fields blank to keep
+                    it, or enter a new password if you want to change it.
+                  </>
+                ) : (
+                  <>
+                    You need a password to sign in before you can accept your read-only audit
+                    engagement.
+                  </>
+                )
+              ) : inviteToken || pendingInviteFlow ? (
                 <>
                   You need a password you will use to sign in before you can accept invitations in
                   the app.
@@ -355,6 +375,7 @@ export default function AccountSetupForm({
         </div>
       ) : null}
 
+      {!auditorInviteFlow ? (
       <div className="space-y-4 rounded-lg border border-border bg-card p-6 shadow-sm">
         <div>
           <h2 className="text-lg font-semibold text-foreground">Notifications</h2>
@@ -416,6 +437,7 @@ export default function AccountSetupForm({
           </label>
         </div>
       </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" disabled={pending}>

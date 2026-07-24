@@ -4,7 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from './server'
 import type { StudyRole } from '@/lib/types'
 import type { StudyRoleDefinitionRow } from '@/lib/supabase/study-roles'
-import { getEngagementStudyIdsForUser } from '@/lib/auditor/engagements'
+import { getEngagementStudyIdsForUser, isAuditorScopedToStudy } from '@/lib/auditor/engagements'
 
 /**
  * Load role definitions for a user's active assignments without PostgREST embeds.
@@ -190,7 +190,8 @@ export async function canAuditRecord(
   studyId: string
 ): Promise<boolean> {
   const perms = await getStudyMemberPermissions(userId, studyId)
-  return Boolean(perms?.can_access_audit_hub)
+  if (perms?.can_access_audit_hub) return true
+  return isAuditorScopedToStudy(userId, studyId)
 }
 
 export async function getStudyIdsWhereUserCanAudit(

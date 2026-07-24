@@ -187,6 +187,15 @@ export default async function InstitutionDashboardPage({ params }: PageProps) {
                 : 'Institution members only on studies'}
             </Badge>
           </div>
+          {!externalCollabAllowed && isAdmin ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Study collaborators must be institution members. Time-boxed read-only{' '}
+              <Link href={`/institutions/${id}/auditors`} className="underline underline-offset-2">
+                audit engagements
+              </Link>{' '}
+              are still available and do not require external collaborators.
+            </p>
+          ) : null}
           {institution.description && (
             <p className="mt-2 text-gray-600">{institution.description}</p>
           )}

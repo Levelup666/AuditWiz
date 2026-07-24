@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { canManageInstitution } from '@/lib/supabase/permissions'
 import InstitutionSettingsForm from '@/components/institutions/institution-settings-form'
 import { institutionAllowsExternalCollaborators } from '@/lib/institution-collaboration'
+import { institutionRequiresFreshEmailForAuditorInvites } from '@/lib/auditor/auditor-invite-policy'
+import { getAuditorReferenceIdPolicy } from '@/lib/auditor/auditor-credential-policy'
 
 interface SettingsPageProps {
   params: Promise<{ id: string }>
@@ -44,6 +46,8 @@ export default async function InstitutionSettingsPage({ params }: SettingsPagePr
     )
   }
 
+  const refPolicy = getAuditorReferenceIdPolicy(institution.metadata)
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -71,6 +75,12 @@ export default async function InstitutionSettingsPage({ params }: SettingsPagePr
               ? (institution.metadata as { research_field: string }).research_field
               : '',
           allowExternalCollaborators: institutionAllowsExternalCollaborators(institution.metadata),
+          auditorInvitesRequireFreshEmail: institutionRequiresFreshEmailForAuditorInvites(
+            institution.metadata
+          ),
+          auditorReferenceIdFormat: refPolicy.format ?? '',
+          auditorReferenceIdLabel: refPolicy.label,
+          auditorReferenceIdRequired: refPolicy.required,
         }}
       />
     </div>

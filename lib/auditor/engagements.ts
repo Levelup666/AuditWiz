@@ -26,6 +26,7 @@ export async function listActiveEngagementsForUser(
       starts_at, expires_at, accepted_at, revoked_at, revocation_reason,
       granted_by, last_sent_at, resend_count,
       invite_first_opened_at, expiry_audit_logged_at, created_at,
+      auditor_organization_name, auditor_title, auditor_reference_id, attested_at,
       institution:institutions(id, name)
     `
     )
@@ -81,6 +82,10 @@ export async function listActiveEngagementsForUser(
       invite_first_opened_at: r.invite_first_opened_at,
       expiry_audit_logged_at: r.expiry_audit_logged_at,
       created_at: r.created_at,
+      auditor_organization_name: r.auditor_organization_name ?? null,
+      auditor_title: r.auditor_title ?? null,
+      auditor_reference_id: r.auditor_reference_id ?? null,
+      attested_at: r.attested_at ?? null,
       institution_name: institution?.name ?? null,
       studies: studiesByEngagement.get(r.id) ?? [],
     }

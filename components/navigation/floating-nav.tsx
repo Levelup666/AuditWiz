@@ -130,6 +130,7 @@ export default function FloatingNav() {
     isAuthenticated,
     canViewLogs,
     hasActiveAuditorEngagement,
+    auditorPrimary,
     orcidIdentity,
     unreadNotificationCount,
   } = ctx ?? {
@@ -138,6 +139,7 @@ export default function FloatingNav() {
     isAuthenticated: false,
     canViewLogs: false,
     hasActiveAuditorEngagement: false,
+    auditorPrimary: false,
     orcidIdentity: null as OrcidSessionIdentity | null,
     unreadNotificationCount: null as number | null,
   }
@@ -150,13 +152,20 @@ export default function FloatingNav() {
     return null
   }
 
-  const navigation: NavItem[] = [
-    ...baseNavigation.slice(0, 3),
-    notificationsNavItem,
-    ...(canViewLogs ? [logsNavItem] : []),
-    ...(hasActiveAuditorEngagement ? [auditorNavItem] : []),
-    baseNavigation[3],
-  ]
+  // Engagement-only users get a dedicated shell: Auditor, Logs, Profile (+ invites).
+  const navigation: NavItem[] = auditorPrimary
+    ? [
+        auditorNavItem,
+        ...(canViewLogs ? [logsNavItem] : []),
+        baseNavigation[3],
+      ]
+    : [
+        ...baseNavigation.slice(0, 3),
+        notificationsNavItem,
+        ...(canViewLogs ? [logsNavItem] : []),
+        ...(hasActiveAuditorEngagement ? [auditorNavItem] : []),
+        baseNavigation[3],
+      ]
 
   const handleSignOut = async () => {
     const supabase = createClient()

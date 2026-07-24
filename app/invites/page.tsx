@@ -57,8 +57,26 @@ export default async function InvitesPage({ searchParams }: InvitesPageProps) {
     return inv.email.trim().toLowerCase() === userEmailNorm
   })
 
+  const { data: auditEngagementsRaw } = await supabase
+    .from('audit_engagements')
+    .select(
+      `id, institution_id, auditor_email, scope, purpose, created_at, expires_at,
+       institution:institutions(id, name)`
+    )
+    .is('accepted_at', null)
+    .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+
+  const auditEngagements = (auditEngagementsRaw || []).filter((inv) => {
+    if (!userEmailNorm || !inv.auditor_email) return false
+    return inv.auditor_email.trim().toLowerCase() === userEmailNorm
+  })
+
   const hasAnyInvites =
-    (studyInvites && studyInvites.length > 0) || (institutionInvites && institutionInvites.length > 0)
+    (studyInvites && studyInvites.length > 0) ||
+    (institutionInvites && institutionInvites.length > 0) ||
+    auditEngagements.length > 0
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -115,7 +133,7 @@ export default async function InvitesPage({ searchParams }: InvitesPageProps) {
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Pending Invites</h1>
         <p className="mt-2 text-gray-600">
-          Accept study and institution invites here.
+          Accept study, institution, and audit engagement invites here.
         </p>
       </div>
 
@@ -124,13 +142,52 @@ export default async function InvitesPage({ searchParams }: InvitesPageProps) {
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Mail className="h-12 w-12 text-muted-foreground" />
             <p className="mt-4 text-muted-foreground">No pending invites</p>
-            <Button asChild className="mt-4">
+            <Button asChild className="mt-4" variant="outline">
+              <Link href="/auditor">Auditor dashboard</Link>
+            </Button>
+            <Button asChild className="mt-2">
               <Link href="/studies">Go to Studies</Link>
             </Button>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-6">
+          {auditEngagements.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Audit engagements</CardTitle>
+                <CardDescription>
+                  Read-only audit access issued by an institution administrator
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {auditEngagements.map((inv) => {
+                  const inst = inv.institution as unknown as { id: string; name: string } | null
+                  const scopeLabel =
+                    inv.scope === 'institution_wide' ? 'Institution-wide' : 'Specific studies'
+                  return (
+                    <div
+                      key={inv.id}
+                      className="flex items-center justify-between rounded-lg border p-4"
+                    >
+                      <div>
+                        <p className="font-medium">{inst?.name ?? 'Institution'}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {scopeLabel}
+                          {inv.purpose ? ` · ${inv.purpose}` : ''} · Expires{' '}
+                          {new Date(inv.expires_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <Button asChild>
+                        <Link href={`/invites/audit/${inv.id}`}>View</Link>
+                      </Button>
+                    </div>
+                  )
+                })}
+              </CardContent>
+            </Card>
+          )}
+
           {institutionInvites && institutionInvites.length > 0 && (
             <Card>
               <CardHeader>

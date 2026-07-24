@@ -213,6 +213,11 @@ export interface AuditEngagement {
   invite_first_opened_at: string | null;
   expiry_audit_logged_at: string | null;
   created_at: string;
+  auditor_organization_name?: string | null;
+  auditor_title?: string | null;
+  auditor_reference_id?: string | null;
+  attested_at?: string | null;
+  attestation_text_hash?: string | null;
 }
 
 export interface AuditEngagementStudy {

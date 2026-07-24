@@ -5,7 +5,18 @@ import { hashInviteToken } from '@/lib/invites/token'
 import { lookupInviteByTokenHash } from '@/lib/invites/lookup-invite-by-token'
 import { acceptStudyInviteForUser } from '@/lib/invites/accept-study'
 import { acceptInstitutionInviteForUser } from '@/lib/invites/accept-institution'
-import { acceptAuditEngagementForUser } from '@/lib/invites/accept-audit-engagement'
+import { auditorSetupPathForToken } from '@/lib/invites/auditor-invite-flow'
+import type { ResolvedInvite } from '@/lib/invites/lookup-invite-by-token'
+
+function setupPathForInvite(rawToken: string, resolved: ResolvedInvite | null): string {
+  if (rawToken && resolved?.kind === 'audit_engagement') {
+    return auditorSetupPathForToken(rawToken)
+  }
+  if (rawToken) {
+    return `/account/setup?next=${encodeURIComponent(`/invite/${rawToken}`)}&invite_token=${encodeURIComponent(rawToken)}`
+  }
+  return '/account/setup?next=/invites&pending_invite=1'
+}
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -16,6 +27,16 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  const body = await request.json().catch(() => ({}))
+  const rawToken = typeof body.token === 'string' ? body.token.trim() : ''
+  if (!rawToken) {
+    return NextResponse.json({ error: 'token is required' }, { status: 400 })
+  }
+
+  const admin = createAdminClient()
+  const tokenHash = hashInviteToken(rawToken)
+  const resolved = await lookupInviteByTokenHash(admin, tokenHash)
 
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
@@ -30,7 +51,7 @@ export async function POST(request: NextRequest) {
       {
         error: 'Set a password in account setup before accepting this invitation.',
         requires_account_setup: true,
-        setup_path: '/account/setup?next=/invites&pending_invite=1',
+        setup_path: setupPathForInvite(rawToken, resolved),
       },
       { status: 428 }
     )
@@ -40,21 +61,11 @@ export async function POST(request: NextRequest) {
       {
         error: 'Add your first and last name in account setup before accepting this invitation.',
         requires_account_setup: true,
-        setup_path: '/account/setup?next=/invites&pending_invite=1',
+        setup_path: setupPathForInvite(rawToken, resolved),
       },
       { status: 428 }
     )
   }
-
-  const body = await request.json().catch(() => ({}))
-  const rawToken = typeof body.token === 'string' ? body.token.trim() : ''
-  if (!rawToken) {
-    return NextResponse.json({ error: 'token is required' }, { status: 400 })
-  }
-
-  const admin = createAdminClient()
-  const tokenHash = hashInviteToken(rawToken)
-  const resolved = await lookupInviteByTokenHash(admin, tokenHash)
 
   if (!resolved) {
     return NextResponse.json({ error: 'Invite not found' }, { status: 404 })
@@ -91,22 +102,16 @@ export async function POST(request: NextRequest) {
   }
 
   if (resolved.kind === 'audit_engagement') {
-    const result = await acceptAuditEngagementForUser(
-      supabase,
-      user.id,
-      user.email ?? undefined,
-      resolved.institutionId,
-      resolved.inviteId
+    // Credentials / attestation are collected on the dedicated accept page.
+    return NextResponse.json(
+      {
+        error: 'Confirm your auditor credentials to accept this engagement.',
+        requires_attestation: true,
+        engagement_id: resolved.inviteId,
+        attestation_path: `/invites/audit/${resolved.inviteId}`,
+      },
+      { status: 428 }
     )
-    if (!result.ok) {
-      return NextResponse.json({ error: result.error }, { status: result.status })
-    }
-    return NextResponse.json({
-      success: true,
-      kind: 'audit_engagement',
-      engagement_id: result.engagementId,
-      institution_id: result.institutionId,
-    })
   }
 
   const result = await acceptInstitutionInviteForUser(

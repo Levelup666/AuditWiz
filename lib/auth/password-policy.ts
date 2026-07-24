@@ -126,6 +126,17 @@ export function userSubjectToPasswordPolicy(
   return true
 }
 
+/** Supabase rejects updateUser when the new password matches the current one. */
+export function isSupabaseSamePasswordError(error: { message?: string; code?: string }): boolean {
+  const code = error.code?.toLowerCase() ?? ''
+  const msg = error.message?.toLowerCase() ?? ''
+  return (
+    code === 'same_password' ||
+    msg.includes('different from the old password') ||
+    msg.includes('should be different')
+  )
+}
+
 export function isPasswordRotationExpired(params: {
   passwordLastChangedAt: string | null | undefined
   rotationDays: number | null | undefined

@@ -7,8 +7,10 @@ import { generateHash } from '@/lib/crypto'
 import { generateInviteToken } from '@/lib/invites/token'
 import {
   inviteEmailDispatchFields,
+  sendExistingUserPendingInviteNotification,
   sendPendingInviteEmail,
 } from '@/lib/email/pending-invite-notification'
+import { findUserIdByEmail } from '@/lib/supabase/find-user-by-email'
 
 export async function POST(
   _request: NextRequest,
@@ -98,14 +100,23 @@ export async function POST(
   )
 
   const admin = createAdminClient()
-  const emailResult = await sendPendingInviteEmail({
-    to: engagement.auditor_email,
-    kind: 'institution',
-    contextLabel: `${institution.name} (audit engagement)`,
-    inviteRawToken: rawToken,
-    expiresAtIso: engagement.expires_at,
-    supabaseAdmin: admin,
-  })
+  const existingUserId = await findUserIdByEmail(admin, engagement.auditor_email)
+  const emailResult = existingUserId
+    ? await sendExistingUserPendingInviteNotification({
+        to: engagement.auditor_email,
+        kind: 'audit_engagement',
+        contextLabel: institution.name,
+        inviteRawToken: rawToken,
+        expiresAtIso: engagement.expires_at,
+      })
+    : await sendPendingInviteEmail({
+        to: engagement.auditor_email,
+        kind: 'audit_engagement',
+        contextLabel: institution.name,
+        inviteRawToken: rawToken,
+        expiresAtIso: engagement.expires_at,
+        supabaseAdmin: admin,
+      })
 
   return NextResponse.json({
     success: true,

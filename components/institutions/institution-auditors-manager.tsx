@@ -45,6 +45,7 @@ type EngagementRow = {
   last_sent_at: string
   resend_count: number
   invite_first_opened_at: string | null
+  batch_id: string | null
   created_at: string
   studies: ScopedStudy[]
 }
@@ -52,11 +53,13 @@ type EngagementRow = {
 interface Props {
   institutionId: string
   studies: StudyOption[]
+  auditorInvitesRequireFreshEmail?: boolean
 }
 
 export default function InstitutionAuditorsManager({
   institutionId,
   studies,
+  auditorInvitesRequireFreshEmail = false,
 }: Props) {
   const [engagements, setEngagements] = useState<EngagementRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -64,13 +67,15 @@ export default function InstitutionAuditorsManager({
   const [actionId, setActionId] = useState<string | null>(null)
 
   // create form state
-  const [email, setEmail] = useState('')
+  const [emailsText, setEmailsText] = useState('')
   const [purpose, setPurpose] = useState('')
   const [duration, setDuration] = useState('30')
   const [scope, setScope] = useState<'institution_wide' | 'specific_studies'>(
     'institution_wide'
   )
   const [selectedStudyIds, setSelectedStudyIds] = useState<string[]>([])
+  const [overrideStudyMemberConflict, setOverrideStudyMemberConflict] = useState(false)
+  const [overrideReason, setOverrideReason] = useState('')
 
   const fetchList = useCallback(async () => {
     setLoading(true)
@@ -92,12 +97,23 @@ export default function InstitutionAuditorsManager({
 
   async function handleCreate(event: React.FormEvent) {
     event.preventDefault()
-    if (!email.trim()) {
-      toast.error('Email required', 'Enter the auditor email address.')
+    const auditorEmails = emailsText
+      .split(/[\n,;]+/)
+      .map((e) => e.trim())
+      .filter(Boolean)
+    if (auditorEmails.length === 0) {
+      toast.error('Email required', 'Enter at least one auditor email address.')
       return
     }
     if (scope === 'specific_studies' && selectedStudyIds.length === 0) {
       toast.error('Select studies', 'Pick at least one study or switch to institution-wide.')
+      return
+    }
+    if (overrideStudyMemberConflict && !overrideReason.trim()) {
+      toast.error(
+        'Override reason required',
+        'Document why a study collaborator may receive an auditor engagement.'
+      )
       return
     }
     setSubmitting(true)
@@ -106,11 +122,13 @@ export default function InstitutionAuditorsManager({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          auditor_email: email.trim(),
+          auditor_emails: auditorEmails,
           purpose: purpose.trim() || null,
           scope,
           duration_days: Number(duration) || 30,
           study_ids: scope === 'specific_studies' ? selectedStudyIds : [],
+          override_study_member_conflict: overrideStudyMemberConflict,
+          override_reason: overrideReason.trim() || undefined,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -122,27 +140,61 @@ export default function InstitutionAuditorsManager({
         await fetchList()
         return
       }
+      if (res.status === 409 && data.code === 'study_member_conflict') {
+        toast.warning(
+          'Study collaborator conflict',
+          data.error ||
+            'This email is already on a study in scope. Enable override with a documented reason, or use a dedicated auditor email.'
+        )
+        return
+      }
+      if (res.status === 403 && data.code === 'institution_member_conflict') {
+        toast.error(
+          'Institution member',
+          data.error ||
+            'Active institution members cannot be invited as external auditors.'
+        )
+        return
+      }
+      if (res.status === 403 && data.code === 'existing_account_not_allowed') {
+        toast.error(
+          'Existing account',
+          data.error ||
+            'This institution requires auditor emails with no existing AuditWiz account.'
+        )
+        return
+      }
       if (!res.ok) {
         throw new Error(data?.error || res.statusText)
       }
+      const createdCount = Array.isArray(data.created) ? data.created.length : 1
+      const skippedCount = Array.isArray(data.skipped) ? data.skipped.length : 0
       if (data.email_dispatched) {
         toast.success(
-          'Engagement created',
+          createdCount > 1 ? 'Engagements created' : 'Engagement created',
           data.email_dispatch_message ||
-            'The auditor will receive an email with their invite link.'
+            `Invitation email sent to ${createdCount} auditor${createdCount === 1 ? '' : 's'}.`
         )
       } else {
         toast.warning(
-          'Engagement created',
+          createdCount > 1 ? 'Engagements created' : 'Engagement created',
           data.email_dispatch_message ||
-            'No email was sent (mail not configured). Share the invite link from logs / records.'
+            'No email was sent (mail not configured). Share invite links from your records if needed.'
         )
       }
-      setEmail('')
+      if (skippedCount > 0) {
+        toast.warning(
+          'Some skipped',
+          `${skippedCount} address${skippedCount === 1 ? '' : 'es'} could not be invited.`
+        )
+      }
+      setEmailsText('')
       setPurpose('')
       setDuration('30')
       setScope('institution_wide')
       setSelectedStudyIds([])
+      setOverrideStudyMemberConflict(false)
+      setOverrideReason('')
       await fetchList()
     } catch (e) {
       toast.error('Create failed', e instanceof Error ? e.message : 'Could not create engagement')
@@ -250,22 +302,28 @@ export default function InstitutionAuditorsManager({
           <CardDescription>
             External or internal auditors get <strong>read-only</strong> access for the window
             you choose. They can read records, signatures, anchors, and audit logs in scope.
-            They cannot edit, sign, approve, or anchor anything.
+            They cannot edit, sign, approve, or anchor anything. Issuing auditor access does not
+            require external collaborators or institution membership—auditors are granted via
+            audit engagements, not study membership.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label htmlFor="auditor-email">Auditor email *</Label>
-                <Input
-                  id="auditor-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="auditor@example.com"
-                  className="mt-1"
+              <div className="sm:col-span-2">
+                <Label htmlFor="auditor-emails">Auditor email(s) *</Label>
+                <textarea
+                  id="auditor-emails"
+                  value={emailsText}
+                  onChange={(e) => setEmailsText(e.target.value)}
+                  placeholder={'auditor@example.com\nreviewer@firm.com'}
+                  rows={3}
+                  className="mt-1 flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  One email per line, or separate with commas. Each auditor receives their own
+                  read-only engagement invite.
+                </p>
               </div>
               <div>
                 <Label htmlFor="auditor-duration">Duration (days)</Label>
@@ -343,6 +401,56 @@ export default function InstitutionAuditorsManager({
                   )}
                 </div>
               )}
+            </div>
+
+            <div className="rounded-md border border-border bg-muted/30 p-4 space-y-3 text-sm">
+              <p className="font-medium text-foreground">Eligibility</p>
+              <ul className="list-disc space-y-1 pl-5 text-muted-foreground text-xs">
+                <li>
+                  Active <strong>institution members</strong> of this organization cannot be
+                  invited as external auditors.
+                </li>
+                <li>
+                  Emails that are <strong>study collaborators</strong> on in-scope studies are
+                  blocked unless you override with a documented reason below.
+                </li>
+                {auditorInvitesRequireFreshEmail ? (
+                  <li>
+                    This institution requires auditor emails with <strong>no existing AuditWiz
+                    account</strong>.
+                  </li>
+                ) : (
+                  <li>
+                    External auditors may use an existing AuditWiz account (for example at another
+                    institution).
+                  </li>
+                )}
+              </ul>
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={overrideStudyMemberConflict}
+                  onChange={(e) => setOverrideStudyMemberConflict(e.target.checked)}
+                />
+                <span>
+                  Override study collaborator conflict (requires documented reason for the audit
+                  ledger)
+                </span>
+              </label>
+              {overrideStudyMemberConflict ? (
+                <div>
+                  <Label htmlFor="auditor-override-reason">Override reason *</Label>
+                  <Textarea
+                    id="auditor-override-reason"
+                    value={overrideReason}
+                    onChange={(e) => setOverrideReason(e.target.value)}
+                    placeholder="e.g. Internal QA review — segregated auditor login confirmed with compliance"
+                    rows={2}
+                    className="mt-1"
+                  />
+                </div>
+              ) : null}
             </div>
 
             <div className="flex justify-end">

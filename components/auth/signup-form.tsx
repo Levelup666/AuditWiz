@@ -12,6 +12,11 @@ import { toast } from '@/lib/toast'
 import { upsertProfileNamesAfterSignup } from '@/app/auth/actions'
 import { getPasswordStrengthLabel, validatePassword } from '@/lib/auth/password-policy'
 import { OrcidOAuthButton } from '@/components/auth/orcid-oauth-button'
+import {
+  auditorSetupPathForToken,
+  auditorSetupPathFromInvitePath,
+  inviteTokenFromPath,
+} from '@/lib/invites/auditor-invite-flow'
 
 export default function SignUpForm({
   initialEmail = '',
@@ -93,9 +98,12 @@ export default function SignUpForm({
             : 'Continue to finish account setup.'
           : 'Check your email to confirm your account.'
       )
-      router.push(
-        redirectedFrom || '/account/setup?next=/onboarding&credentials_required=1'
-      )
+      const inviteToken = redirectedFrom ? inviteTokenFromPath(redirectedFrom) : null
+      const postSignup =
+        inviteToken && auditorSetupPathFromInvitePath(redirectedFrom!)
+          ? auditorSetupPathFromInvitePath(redirectedFrom!)!
+          : redirectedFrom || '/account/setup?next=/onboarding&credentials_required=1'
+      router.push(postSignup)
       router.refresh()
     } catch {
       toast.error('Sign up failed', 'An unexpected error occurred')
@@ -233,7 +241,9 @@ export default function SignUpForm({
           mode="signup"
           nextPath={
             redirectedFrom
-              ? `/account/setup?orcid_email_required=1&next=${encodeURIComponent(redirectedFrom)}`
+              ? inviteTokenFromPath(redirectedFrom)
+                ? auditorSetupPathForToken(inviteTokenFromPath(redirectedFrom)!)
+                : `/account/setup?orcid_email_required=1&next=${encodeURIComponent(redirectedFrom)}`
               : undefined
           }
           className="w-full"

@@ -5,6 +5,9 @@ const ORCID_EMAIL_GATE_ALLOW_PREFIXES = [
   '/auth/',
   '/account/setup',
   '/api/auth/sync-orcid-from-session',
+  '/invite/',
+  '/auditor',
+  '/invites',
 ] as const
 
 export function pathBypassesOrcidEmailGate(pathname: string): boolean {

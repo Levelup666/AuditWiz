@@ -1,8 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
-import { isActiveInstitutionMember } from '@/lib/supabase/permissions'
 import { getStudyCollaborationPolicy } from '@/lib/study-institution-policy'
+import {
+  STUDY_COLLABORATION_MEMBERS_ONLY_ACCEPT_MESSAGE,
+  studyCollaborationBlockedByMembersOnlyPolicy,
+} from '@/lib/institution-study-collaboration-policy'
 import { getStudyRoleDefinitionIdBySlug } from '@/lib/supabase/study-roles'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { assertRoomForNewStudyParticipant } from '@/lib/study-participant-room'
@@ -75,15 +78,16 @@ export async function acceptStudyInviteForUser(
 
   const policy = await getStudyCollaborationPolicy(studyId)
   if (
-    policy.institutionId &&
-    !policy.allowExternalCollaborators &&
-    !(await isActiveInstitutionMember(userId, policy.institutionId))
+    await studyCollaborationBlockedByMembersOnlyPolicy({
+      allowExternalCollaborators: policy.allowExternalCollaborators,
+      institutionId: policy.institutionId,
+      userId,
+    })
   ) {
     return {
       ok: false,
       status: 403,
-      error:
-        "This study's institution only allows institution members on studies. Ask an admin to invite you to the institution and accept that invite first, then return here to accept the study invite.",
+      error: STUDY_COLLABORATION_MEMBERS_ONLY_ACCEPT_MESSAGE,
     }
   }
 

@@ -21,6 +21,8 @@ type NavContextType = {
   canViewLogs: boolean | null
   /** Null while loading; whether the user has at least one active audit engagement. */
   hasActiveAuditorEngagement: boolean | null
+  /** Null while loading; engagement-only user (no study/institution membership). */
+  auditorPrimary: boolean | null
   /** Null while loading; verified ORCID linked to the current account (if any). */
   orcidIdentity: OrcidSessionIdentity | null
   /** Null while loading; unread in-app notification count. */
@@ -41,6 +43,7 @@ export default function NavProvider({ children }: { children: React.ReactNode })
   const [hasActiveAuditorEngagement, setHasActiveAuditorEngagement] = useState<
     boolean | null
   >(null)
+  const [auditorPrimary, setAuditorPrimary] = useState<boolean | null>(null)
   const [signedInViaOrcid, setSignedInViaOrcid] = useState<boolean>(false)
   const [orcidIdentity, setOrcidIdentity] = useState<OrcidSessionIdentity | null>(null)
   const [unreadNotificationCount, setUnreadNotificationCount] = useState<number | null>(null)
@@ -86,16 +89,23 @@ export default function NavProvider({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (!isAuthenticated) {
       setHasActiveAuditorEngagement(null)
+      setAuditorPrimary(null)
       return
     }
     let cancelled = false
     fetch('/api/auditor/access')
-      .then((r) => (r.ok ? r.json() : { hasActiveEngagement: false }))
-      .then((d: { hasActiveEngagement?: boolean }) => {
-        if (!cancelled) setHasActiveAuditorEngagement(Boolean(d?.hasActiveEngagement))
+      .then((r) => (r.ok ? r.json() : { hasActiveEngagement: false, auditorPrimary: false }))
+      .then((d: { hasActiveEngagement?: boolean; auditorPrimary?: boolean }) => {
+        if (!cancelled) {
+          setHasActiveAuditorEngagement(Boolean(d?.hasActiveEngagement))
+          setAuditorPrimary(Boolean(d?.auditorPrimary))
+        }
       })
       .catch(() => {
-        if (!cancelled) setHasActiveAuditorEngagement(false)
+        if (!cancelled) {
+          setHasActiveAuditorEngagement(false)
+          setAuditorPrimary(false)
+        }
       })
     return () => {
       cancelled = true
@@ -164,6 +174,7 @@ export default function NavProvider({ children }: { children: React.ReactNode })
         isAuthenticated,
         canViewLogs,
         hasActiveAuditorEngagement,
+        auditorPrimary,
         orcidIdentity,
         unreadNotificationCount,
       }}

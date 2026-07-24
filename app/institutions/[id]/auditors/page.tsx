@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { canManageInstitution } from '@/lib/supabase/permissions'
 import { Button } from '@/components/ui/button'
 import InstitutionAuditorsManager from '@/components/institutions/institution-auditors-manager'
+import { institutionRequiresFreshEmailForAuditorInvites } from '@/lib/auditor/auditor-invite-policy'
 
 interface PageProps {
   params: Promise<{ id: string }>
@@ -19,7 +20,7 @@ export default async function InstitutionAuditorsPage({ params }: PageProps) {
 
   const { data: institution } = await supabase
     .from('institutions')
-    .select('id, name')
+    .select('id, name, metadata')
     .eq('id', id)
     .single()
   if (!institution) notFound()
@@ -59,7 +60,13 @@ export default async function InstitutionAuditorsPage({ params }: PageProps) {
           <Link href={`/institutions/${id}`}>Back to institution</Link>
         </Button>
       </div>
-      <InstitutionAuditorsManager institutionId={id} studies={studies} />
+      <InstitutionAuditorsManager
+        institutionId={id}
+        studies={studies}
+        auditorInvitesRequireFreshEmail={institutionRequiresFreshEmailForAuditorInvites(
+          institution.metadata
+        )}
+      />
     </div>
   )
 }

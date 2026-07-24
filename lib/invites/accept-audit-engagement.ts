@@ -1,26 +1,37 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
+import {
+  AUDITOR_ATTESTATION_STATEMENT,
+  validateAuditorCredentials,
+  type AuditorCredentialsInput,
+} from '@/lib/auditor/auditor-credentials'
 
 export type AcceptAuditEngagementResult =
   | { ok: true; engagementId: string; institutionId: string }
-  | { ok: false; status: number; error: string }
+  | { ok: false; status: number; error: string; code?: string }
 
 /**
- * Accept an audit engagement: ties the auditor's auth user_id to the engagement and emits
- * audit events. The Supabase session must belong to the invitee email — RLS enforces that
- * via the "Invitee can accept own pending engagement" policy.
+ * Accept an audit engagement: ties the auditor's auth user_id to the engagement, records
+ * attested credentials, and emits audit events. The Supabase session must belong to the
+ * invitee email — RLS enforces that via the "Invitee can accept own pending engagement" policy.
+ *
+ * Must NOT call study collaboration policy helpers; audit engagements are out of scope for
+ * allow_external_collaborators (institution members only on studies).
  */
 export async function acceptAuditEngagementForUser(
   supabase: SupabaseClient,
   userId: string,
   userEmail: string | undefined,
   institutionId: string,
-  engagementId: string
+  engagementId: string,
+  credentialsInput: AuditorCredentialsInput
 ): Promise<AcceptAuditEngagementResult> {
   const { data: engagement, error: fetchError } = await supabase
     .from('audit_engagements')
-    .select('id, institution_id, auditor_email, auditor_user_id, accepted_at, revoked_at, expires_at, starts_at, scope, purpose, granted_by')
+    .select(
+      'id, institution_id, auditor_email, auditor_user_id, accepted_at, revoked_at, expires_at, starts_at, scope, purpose, granted_by'
+    )
     .eq('id', engagementId)
     .eq('institution_id', institutionId)
     .single()
@@ -52,12 +63,41 @@ export async function acceptAuditEngagementForUser(
     }
   }
 
+  const { data: institution } = await supabase
+    .from('institutions')
+    .select('metadata')
+    .eq('id', institutionId)
+    .maybeSingle()
+
+  const validated = validateAuditorCredentials(credentialsInput, institution?.metadata)
+  if (!validated.ok) {
+    return {
+      ok: false,
+      status: 400,
+      error: validated.error,
+      code: 'credentials_required',
+    }
+  }
+
+  const { credentials } = validated
   const nowIso = new Date().toISOString()
+  const attestationTextHash = await generateHash({
+    statement: AUDITOR_ATTESTATION_STATEMENT,
+    organization: credentials.organizationName,
+    title: credentials.title,
+    reference_id: credentials.referenceId,
+  })
+
   const { data: updated, error: updateError } = await supabase
     .from('audit_engagements')
     .update({
       accepted_at: nowIso,
       auditor_user_id: userId,
+      auditor_organization_name: credentials.organizationName,
+      auditor_title: credentials.title,
+      auditor_reference_id: credentials.referenceId,
+      attested_at: nowIso,
+      attestation_text_hash: attestationTextHash,
     })
     .eq('id', engagementId)
     .is('accepted_at', null)
@@ -80,6 +120,9 @@ export async function acceptAuditEngagementForUser(
     institution_id: institutionId,
     auditor_user_id: userId,
     accepted_at: nowIso,
+    attestation_text_hash: attestationTextHash,
+    auditor_organization_name: credentials.organizationName,
+    auditor_reference_id: credentials.referenceId,
   })
 
   await createAuditEvent(
@@ -96,6 +139,11 @@ export async function acceptAuditEngagementForUser(
       purpose: engagement.purpose,
       starts_at: engagement.starts_at,
       expires_at: engagement.expires_at,
+      attestation_text_hash: attestationTextHash,
+      auditor_organization_name: credentials.organizationName,
+      auditor_title: credentials.title,
+      // Hash of reference id only in ledger metadata for attribution without storing raw id twice
+      auditor_reference_id_present: Boolean(credentials.referenceId),
     }
   )
 

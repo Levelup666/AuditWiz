@@ -33,6 +33,8 @@ export async function GET(
     .from('audit_engagements')
     .select(
       `id, institution_id, scope, purpose, starts_at, expires_at, accepted_at, revoked_at,
+       auditor_organization_name, auditor_title, auditor_reference_id, attested_at,
+       attestation_text_hash,
        institution:institutions(id, name)`
     )
     .eq('id', engagementId)
@@ -164,6 +166,13 @@ export async function GET(
       purpose: engagement.purpose,
       starts_at: engagement.starts_at,
       expires_at: engagement.expires_at,
+      auditor_credentials: {
+        organization_name: engagement.auditor_organization_name ?? null,
+        title: engagement.auditor_title ?? null,
+        reference_id: engagement.auditor_reference_id ?? null,
+        attested_at: engagement.attested_at ?? null,
+        attestation_text_hash: engagement.attestation_text_hash ?? null,
+      },
     },
     studies: studies ?? [],
     records: records ?? [],

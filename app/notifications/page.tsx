@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { getNotificationsPage } from '@/lib/notifications'
 import NotificationsPageClient from '@/components/notifications/notifications-page-client'
+import { userIsAuditorPrimary } from '@/lib/auditor/is-auditor-primary'
 
 interface NotificationsPageProps {
   searchParams: Promise<{ filter?: string; page?: string }>
@@ -19,6 +20,10 @@ export default async function NotificationsPage({ searchParams }: NotificationsP
 
   if (!user) {
     redirect('/auth/signin')
+  }
+
+  if (await userIsAuditorPrimary(supabase, user.id)) {
+    redirect('/auditor')
   }
 
   const sp = await searchParams

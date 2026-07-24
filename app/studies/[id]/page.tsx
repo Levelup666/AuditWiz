@@ -9,6 +9,9 @@ import { canCreateRecord, getStudyMemberPermissions } from '@/lib/supabase/permi
 import StudyMembersRosterDialog from '@/components/studies/study-members-roster-dialog'
 import LeaveStudyButton from '@/components/studies/leave-study-button'
 import { getStudyLeaveEligibility } from '@/lib/study-leave-eligibility'
+import { getActiveEngagementForStudy } from '@/lib/auditor/engagement-for-study'
+import AuditorEngagementBanner from '@/components/auditor/auditor-engagement-banner'
+import AuditorAccessBeacon from '@/components/auditor/auditor-access-beacon'
 import { Badge } from '@/components/ui/badge'
 import StudyDocumentationCard from '@/components/studies/study-documentation-card'
 import StudyTasksSection from '@/components/studies/study-tasks-section'
@@ -48,8 +51,10 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
   const perms = await getStudyMemberPermissions(user.id, id)
   const canViewStudy = Boolean(perms?.can_view)
   const canManageMembers = Boolean(perms?.can_manage_members)
+  const engagementContext = await getActiveEngagementForStudy(supabase, user.id, id)
+  const engagementOnly = Boolean(engagementContext) && !canViewStudy
 
-  const canCreate = await canCreateRecord(user.id, id)
+  const canCreate = engagementOnly ? false : await canCreateRecord(user.id, id)
 
   const { data: activeMemberRows } = canViewStudy
     ? await supabase
@@ -68,6 +73,29 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
       <Suspense fallback={null}>
         <StudyCreatedNotice />
       </Suspense>
+      {engagementContext ? (
+        <>
+          <AuditorAccessBeacon
+            engagementId={engagementContext.engagementId}
+            surface="study"
+            studyId={id}
+          />
+          <AuditorEngagementBanner
+            institutionName={engagementContext.institutionName}
+            scopeLabel={
+              engagementContext.scope === 'institution_wide'
+                ? 'Institution-wide'
+                : 'This study (scoped engagement)'
+            }
+            startsAt={engagementContext.startsAt}
+            expiresAt={engagementContext.expiresAt}
+            purpose={engagementContext.purpose}
+            organizationName={engagementContext.organizationName}
+            auditorTitle={engagementContext.auditorTitle}
+            referenceId={engagementContext.referenceId}
+          />
+        </>
+      ) : null}
       {!studyIsActive && (
         <div
           className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
@@ -127,13 +155,15 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
         canEdit={canCreate && studyIsActive}
       />
 
-      <StudyTasksSection
-        studyId={id}
-        userId={user.id}
-        canManageMembers={canManageMembers}
-        canCreateRecords={canCreate}
-        studyIsActive={studyIsActive}
-      />
+      {!engagementOnly ? (
+        <StudyTasksSection
+          studyId={id}
+          userId={user.id}
+          canManageMembers={canManageMembers}
+          canCreateRecords={canCreate}
+          studyIsActive={studyIsActive}
+        />
+      ) : null}
 
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold">Records</h2>
@@ -151,7 +181,9 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
         <CardHeader>
           <CardTitle>Study Records</CardTitle>
           <CardDescription>
-            Immutable records with version history. Use "Amend" to create new versions.
+            {engagementOnly
+              ? 'Read-only records in your audit engagement scope.'
+              : 'Immutable records with version history. Use "Amend" to create new versions.'}
           </CardDescription>
         </CardHeader>
         <CardContent>

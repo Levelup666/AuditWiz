@@ -6,6 +6,9 @@ interface AuditorEngagementBannerProps {
   expiresAt: string
   startsAt: string
   purpose?: string | null
+  organizationName?: string | null
+  auditorTitle?: string | null
+  referenceId?: string | null
 }
 
 export default function AuditorEngagementBanner({
@@ -14,6 +17,9 @@ export default function AuditorEngagementBanner({
   expiresAt,
   startsAt,
   purpose,
+  organizationName,
+  auditorTitle,
+  referenceId,
 }: AuditorEngagementBannerProps) {
   const expires = new Date(expiresAt)
   const now = new Date()
@@ -38,6 +44,17 @@ export default function AuditorEngagementBanner({
               </>
             ) : null}
           </div>
+          {organizationName ? (
+            <div className="mt-1 text-xs">
+              Auditor: <strong>{organizationName}</strong>
+              {auditorTitle ? <> · {auditorTitle}</> : null}
+              {referenceId ? (
+                <>
+                  {' · '}Ref: <span className="font-mono">{referenceId}</span>
+                </>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mt-1 text-xs text-amber-800/80">
             You can read records, signatures, anchors, and audit logs in scope. You cannot edit,
             sign, approve, or anchor anything. All access is logged.

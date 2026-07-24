@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { Plus, Building2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { getInstitutionResearchFieldLabel } from '@/lib/institution-research-types'
+import { userIsAuditorPrimary } from '@/lib/auditor/is-auditor-primary'
+import { redirect } from 'next/navigation'
 
 export default async function InstitutionsPage() {
   const supabase = await createClient()
@@ -14,6 +16,10 @@ export default async function InstitutionsPage() {
 
   if (!user) {
     return null
+  }
+
+  if (await userIsAuditorPrimary(supabase, user.id)) {
+    redirect('/auditor')
   }
 
   const { data: memberships } = await supabase

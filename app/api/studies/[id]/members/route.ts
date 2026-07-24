@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canManageStudyMembers, getStudyMemberPermissions, isActiveInstitutionMember } from '@/lib/supabase/permissions'
+import {
+  institutionMembersOnlyStudyCollaboration,
+  STUDY_COLLABORATION_MEMBERS_ONLY_MESSAGE,
+  studyCollaborationBlockedByMembersOnlyPolicy,
+} from '@/lib/institution-study-collaboration-policy'
 import { getStudyCollaborationPolicy } from '@/lib/study-institution-policy'
 import {
   inviteEmailDispatchFields,
@@ -269,8 +274,7 @@ export async function POST(
   }
 
   const policy = await getStudyCollaborationPolicy(studyId)
-  const institutionOnlyMessage =
-    'This institution requires everyone on a study to be an institution member first. Invite them to the institution (and wait for acceptance), or enable external collaborators in institution settings.'
+  const institutionOnlyMessage = STUDY_COLLABORATION_MEMBERS_ONLY_MESSAGE
 
   // Add existing institution member by user id (internal picker)
   if (userIdTrim) {
@@ -410,9 +414,11 @@ export async function POST(
 
     if (identity) {
       if (
-        policy.institutionId &&
-        !policy.allowExternalCollaborators &&
-        !(await isActiveInstitutionMember(identity.user_id, policy.institutionId))
+        await studyCollaborationBlockedByMembersOnlyPolicy({
+          allowExternalCollaborators: policy.allowExternalCollaborators,
+          institutionId: policy.institutionId,
+          userId: identity.user_id,
+        })
       ) {
         return NextResponse.json({ error: institutionOnlyMessage }, { status: 403 })
       }
@@ -489,7 +495,7 @@ export async function POST(
     }
 
     // ORCID not registered: create pending invitation (require matching ORCID login to accept)
-    if (policy.institutionId && !policy.allowExternalCollaborators) {
+    if (institutionMembersOnlyStudyCollaboration(policy)) {
       return NextResponse.json(
         {
           error:
@@ -620,7 +626,7 @@ export async function POST(
   }
 
   if (!existingUserId) {
-    if (!policy.allowExternalCollaborators && policy.institutionId) {
+    if (institutionMembersOnlyStudyCollaboration(policy)) {
       return NextResponse.json(
         {
           error:
@@ -680,9 +686,11 @@ export async function POST(
   }
 
   if (
-    policy.institutionId &&
-    !policy.allowExternalCollaborators &&
-    !(await isActiveInstitutionMember(existingUserId, policy.institutionId))
+    await studyCollaborationBlockedByMembersOnlyPolicy({
+      allowExternalCollaborators: policy.allowExternalCollaborators,
+      institutionId: policy.institutionId,
+      userId: existingUserId,
+    })
   ) {
     return NextResponse.json({ error: institutionOnlyMessage }, { status: 403 })
   }
