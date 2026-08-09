@@ -14,6 +14,36 @@ import {
 import { findUserIdByEmail } from '@/lib/supabase/find-user-by-email'
 import { validateAuditorInviteEligibility } from '@/lib/auditor/auditor-invite-eligibility'
 
+export async function sendDeferredAuditEngagementInvite(params: {
+  admin: SupabaseClient
+  rawToken: string
+  deferred: {
+    auditorEmail: string
+    existingUserId: string | null
+    institutionName: string
+    expiresAtIso: string
+  }
+}): Promise<PendingInviteEmailResult> {
+  const { admin, rawToken, deferred } = params
+  if (deferred.existingUserId) {
+    return sendExistingUserPendingInviteNotification({
+      to: deferred.auditorEmail,
+      kind: 'audit_engagement',
+      contextLabel: deferred.institutionName,
+      inviteRawToken: rawToken,
+      expiresAtIso: deferred.expiresAtIso,
+    })
+  }
+  return sendPendingInviteEmail({
+    to: deferred.auditorEmail,
+    kind: 'audit_engagement',
+    contextLabel: deferred.institutionName,
+    inviteRawToken: rawToken,
+    expiresAtIso: deferred.expiresAtIso,
+    supabaseAdmin: admin,
+  })
+}
+
 export type EngagementScope = 'institution_wide' | 'specific_studies'
 
 export type IssueAuditEngagementInput = {
@@ -29,6 +59,8 @@ export type IssueAuditEngagementInput = {
   institutionMetadata?: unknown
   overrideStudyMemberConflict?: boolean
   overrideReason?: string
+  /** When true, create the engagement but do not send invite email yet. */
+  skipEmail?: boolean
 }
 
 export type IssueAuditEngagementResult =
@@ -39,6 +71,13 @@ export type IssueAuditEngagementResult =
       startsAt: string
       rawToken: string
       email: PendingInviteEmailResult
+      /** Present when skipEmail was true — caller must send after letter attach. */
+      deferredEmail?: {
+        auditorEmail: string
+        existingUserId: string | null
+        institutionName: string
+        expiresAtIso: string
+      }
     }
   | { ok: false; status: number; error: string; code?: string; engagement_id?: string }
 
@@ -64,6 +103,7 @@ export async function issueAuditEngagement(
     institutionMetadata,
     overrideStudyMemberConflict = false,
     overrideReason = '',
+    skipEmail = false,
   } = input
 
   const emailNorm = normalizeEmail(auditorEmail)
@@ -100,14 +140,54 @@ export async function issueAuditEngagement(
     return { ok: false, status: 500, error: existingErr.message }
   }
 
-  const open = (existing ?? []).find((r) => !r.accepted_at || new Date(r.expires_at) > new Date())
-  if (open) {
+  const now = new Date()
+  const expiredOpen = (existing ?? []).filter((r) => new Date(r.expires_at) <= now)
+  for (const row of expiredOpen) {
+    const revokedAt = now.toISOString()
+    const { error: revokeErr } = await supabase
+      .from('audit_engagements')
+      .update({
+        revoked_at: revokedAt,
+        revocation_reason: 'expired_superseded',
+      })
+      .eq('id', row.id)
+      .is('revoked_at', null)
+    if (revokeErr) {
+      return { ok: false, status: 500, error: revokeErr.message }
+    }
+    const expiredHash = await generateHash({
+      engagement_id: row.id,
+      institution_id: institutionId,
+      reason: 'expired_superseded',
+      revoked_at: revokedAt,
+    })
+    await createAuditEvent(
+      null,
+      grantedBy,
+      'audit_engagement_expired',
+      'audit_engagement',
+      row.id,
+      null,
+      expiredHash,
+      {
+        institution_id: institutionId,
+        auditor_email: auditorEmail,
+        reason: 'expired_superseded',
+        superseded_for_reissue: true,
+      }
+    )
+  }
+
+  const stillOpen = (existing ?? [])
+    .filter((r) => !expiredOpen.some((e) => e.id === r.id))
+    .find((r) => !r.accepted_at || new Date(r.expires_at) > now)
+  if (stillOpen) {
     return {
       ok: false,
       status: 409,
       error: 'An audit engagement for this email already exists. Resend or revoke it first.',
       code: 'duplicate_engagement',
-      engagement_id: open.id,
+      engagement_id: stillOpen.id,
     }
   }
 
@@ -212,6 +292,24 @@ export async function issueAuditEngagement(
 
   const existingUserId =
     eligibility.existingUserId ?? (await findUserIdByEmail(admin, auditorEmail.trim()))
+
+  if (skipEmail) {
+    return {
+      ok: true,
+      engagementId: inserted.id,
+      expiresAt: expiresAt.toISOString(),
+      startsAt: startsAt.toISOString(),
+      rawToken,
+      email: { sent: false, kind: 'audit_engagement' },
+      deferredEmail: {
+        auditorEmail: auditorEmail.trim(),
+        existingUserId: existingUserId ?? null,
+        institutionName,
+        expiresAtIso: expiresAt.toISOString(),
+      },
+    }
+  }
+
   const emailResult = existingUserId
     ? await sendExistingUserPendingInviteNotification({
         to: auditorEmail.trim(),

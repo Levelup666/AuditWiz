@@ -5,8 +5,8 @@ import { useEffect } from 'react'
 type Surface = 'auditor_hub' | 'study' | 'record' | 'logs'
 
 /**
- * Fires once per browser tab session per engagement to record audit_engagement_accessed.
- * Server also dedupes via httpOnly cookie.
+ * Records audit_engagement_accessed once per (engagement, surface, study/record) per tab session.
+ * Server also dedupes via httpOnly cookie with the same key shape.
  */
 export default function AuditorAccessBeacon({
   engagementId,
@@ -20,7 +20,13 @@ export default function AuditorAccessBeacon({
   recordId?: string
 }) {
   useEffect(() => {
-    const key = `aw_eng_access_${engagementId}`
+    const entity =
+      surface === 'record' && recordId
+        ? `record_${recordId}`
+        : surface === 'study' && studyId
+          ? `study_${studyId}`
+          : surface
+    const key = `aw_eng_access_${engagementId}_${entity}`
     try {
       if (sessionStorage.getItem(key) === '1') return
       sessionStorage.setItem(key, '1')

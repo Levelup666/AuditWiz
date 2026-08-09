@@ -56,6 +56,14 @@ export async function POST(
     referenceId: typeof body.reference_id === 'string' ? body.reference_id : '',
     attested: body.attested === true || body.attested === 'true' || body.attested === 'on',
   }
+  const coi = {
+    declared: body.coi_declared === true || body.coi_declared === 'true' || body.coi_declared === 'on',
+    hasConflict:
+      body.coi_has_conflict === true ||
+      body.coi_has_conflict === 'true' ||
+      body.coi_has_conflict === 'on',
+    disclosure: typeof body.coi_disclosure === 'string' ? body.coi_disclosure : '',
+  }
 
   const { data: engagement, error: fetchErr } = await supabase
     .from('audit_engagements')
@@ -73,7 +81,8 @@ export async function POST(
     user.email ?? undefined,
     engagement.institution_id,
     engagement.id,
-    credentials
+    credentials,
+    coi
   )
 
   if (!result.ok) {

@@ -10,8 +10,10 @@ import { inviteEmailDispatchFields, type PendingInviteEmailResult } from '@/lib/
 import {
   issueAuditEngagement,
   parseAuditorEmails,
+  sendDeferredAuditEngagementInvite,
   type EngagementScope,
 } from '@/lib/auditor/issue-audit-engagement'
+import { attachEngagementLetter } from '@/lib/auditor/attach-engagement-letter'
 
 const MIN_DURATION_DAYS = 1
 const MAX_DURATION_DAYS = 365
@@ -46,7 +48,9 @@ export async function GET(
     .select(
       `id, auditor_email, auditor_user_id, scope, purpose, batch_id,
        starts_at, expires_at, accepted_at, revoked_at, revocation_reason,
-       granted_by, last_sent_at, resend_count, invite_first_opened_at, created_at`
+       granted_by, last_sent_at, resend_count, invite_first_opened_at, created_at,
+       engagement_letter_file_name, engagement_letter_file_hash, engagement_letter_uploaded_at,
+       coi_has_conflict, coi_declared_at`
     )
     .eq('institution_id', institutionId)
     .order('created_at', { ascending: false })
@@ -137,12 +141,74 @@ export async function POST(
     return NextResponse.json({ error: 'Institution not found' }, { status: 404 })
   }
 
-  const body = await request.json().catch(() => ({}))
-  const auditorEmails = parseAuditorEmails(body)
-  const scope = body.scope as EngagementScope | undefined
-  const purpose = typeof body.purpose === 'string' ? body.purpose.trim() : ''
-  const durationDays = clampDurationDays(body.duration_days)
-  const studyIds = Array.isArray(body.study_ids) ? (body.study_ids as unknown[]) : []
+  const contentType = request.headers.get('content-type') ?? ''
+  let auditorEmails: string[] = []
+  let scope: EngagementScope | undefined
+  let purpose = ''
+  let durationDays = DEFAULT_DURATION_DAYS
+  let studyIds: unknown[] = []
+  let overrideStudyMemberConflict = false
+  let overrideReason = ''
+  let letterFile: File | null = null
+
+  if (contentType.includes('multipart/form-data')) {
+    const form = await request.formData()
+    const emailsRaw = form.get('auditor_emails')
+    const emailsText = typeof emailsRaw === 'string' ? emailsRaw : ''
+    auditorEmails = parseAuditorEmails({
+      auditor_emails: emailsText
+        .split(/[\n,;]+/)
+        .map((e) => e.trim())
+        .filter(Boolean),
+      auditor_email:
+        typeof form.get('auditor_email') === 'string'
+          ? (form.get('auditor_email') as string)
+          : undefined,
+    })
+    scope = form.get('scope') as EngagementScope | undefined
+    purpose = typeof form.get('purpose') === 'string' ? String(form.get('purpose')).trim() : ''
+    durationDays = clampDurationDays(form.get('duration_days'))
+    const studyRaw = form.get('study_ids')
+    if (typeof studyRaw === 'string' && studyRaw.trim()) {
+      try {
+        const parsed = JSON.parse(studyRaw) as unknown
+        studyIds = Array.isArray(parsed) ? parsed : []
+      } catch {
+        studyIds = []
+      }
+    }
+    overrideStudyMemberConflict =
+      form.get('override_study_member_conflict') === 'true' ||
+      form.get('override_study_member_conflict') === 'on'
+    overrideReason =
+      typeof form.get('override_reason') === 'string'
+        ? String(form.get('override_reason')).trim()
+        : ''
+    const file = form.get('file')
+    letterFile = file instanceof File && file.size > 0 ? file : null
+  } else {
+    const body = await request.json().catch(() => ({}))
+    auditorEmails = parseAuditorEmails(body)
+    scope = body.scope as EngagementScope | undefined
+    purpose = typeof body.purpose === 'string' ? body.purpose.trim() : ''
+    durationDays = clampDurationDays(body.duration_days)
+    studyIds = Array.isArray(body.study_ids) ? (body.study_ids as unknown[]) : []
+    overrideStudyMemberConflict =
+      body.override_study_member_conflict === true ||
+      body.override_study_member_conflict === 'true'
+    overrideReason =
+      typeof body.override_reason === 'string' ? body.override_reason.trim() : ''
+  }
+
+  if (!letterFile) {
+    return NextResponse.json(
+      {
+        error: 'Engagement letter PDF is required when issuing an audit engagement.',
+        code: 'letter_required',
+      },
+      { status: 400 }
+    )
+  }
 
   if (auditorEmails.length === 0) {
     return NextResponse.json({ error: 'auditor_email or auditor_emails is required' }, { status: 400 })
@@ -179,14 +245,16 @@ export async function POST(
     }
   }
 
-  const overrideStudyMemberConflict =
-    body.override_study_member_conflict === true ||
-    body.override_study_member_conflict === 'true'
-  const overrideReason =
-    typeof body.override_reason === 'string' ? body.override_reason.trim() : ''
-
   const batchId = crypto.randomUUID()
   const admin = createAdminClient()
+  const letterBuffer = Buffer.from(await letterFile.arrayBuffer())
+  const letterMeta = {
+    name: letterFile.name,
+    type: letterFile.type || 'application/pdf',
+    size: letterFile.size,
+    buffer: letterBuffer,
+  }
+
   const created: Array<{
     engagement_id: string
     auditor_email: string
@@ -209,6 +277,7 @@ export async function POST(
       institutionMetadata: institution.metadata,
       overrideStudyMemberConflict,
       overrideReason,
+      skipEmail: true,
     })
 
     if (!result.ok) {
@@ -220,11 +289,44 @@ export async function POST(
       continue
     }
 
+    const attached = await attachEngagementLetter({
+      supabase,
+      admin,
+      institutionId,
+      engagementId: result.engagementId,
+      uploadedBy: user.id,
+      file: letterMeta,
+    })
+
+    if (!attached.ok) {
+      await supabase
+        .from('audit_engagements')
+        .update({
+          revoked_at: new Date().toISOString(),
+          revocation_reason: 'letter_attach_failed',
+        })
+        .eq('id', result.engagementId)
+      skipped.push({
+        auditor_email: auditorEmail,
+        error: attached.error,
+        code: attached.code ?? 'letter_attach_failed',
+      })
+      continue
+    }
+
+    const emailResult = result.deferredEmail
+      ? await sendDeferredAuditEngagementInvite({
+          admin,
+          rawToken: result.rawToken,
+          deferred: result.deferredEmail,
+        })
+      : result.email
+
     created.push({
       engagement_id: result.engagementId,
       auditor_email: auditorEmail,
       expires_at: result.expiresAt,
-      emailResult: result.email,
+      emailResult,
     })
   }
 
@@ -236,7 +338,9 @@ export async function POST(
         : first?.code === 'institution_member_conflict' ||
             first?.code === 'existing_account_not_allowed'
           ? 403
-          : 500
+          : first?.code === 'letter_required'
+            ? 400
+            : 500
     return NextResponse.json(
       {
         error: first?.error ?? 'Failed to create engagements',

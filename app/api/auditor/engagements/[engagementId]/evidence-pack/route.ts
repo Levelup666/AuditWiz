@@ -1,19 +1,18 @@
 // Read-only evidence pack for a single engagement.
 // Auditors call this to download a self-contained, hash-stamped JSON manifest
-// that demonstrates the records, signatures, anchors, and audit trail they reviewed.
+// that demonstrates the records, documents, signatures, anchors, and audit trail they reviewed.
 //
-// Authorization model:
-//  * Engagement must be active (audit_engagement_is_active server-side helper)
-//  * RLS additionally enforces that the auditor can SELECT the underlying rows.
-//
-// Every export emits an `audit_engagement_export` event, so the audit ledger has
-// a permanent record of what evidence was pulled and when.
+// Authorization: engagement owner via getOwnedActiveEngagement only.
+// Every export emits audit_engagement_export.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { generateHash } from '@/lib/crypto'
 import { createAuditEvent } from '@/lib/supabase/audit'
 import { listAuditEventsPage } from '@/lib/supabase/audit'
+import { getOwnedActiveEngagement } from '@/lib/auditor/assert-engagement-access'
+
+const DOC_CAP = 5000
 
 export async function GET(
   request: NextRequest,
@@ -28,33 +27,19 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // RLS: only the engagement owner can SELECT this row.
-  const { data: engagement, error: engErr } = await supabase
-    .from('audit_engagements')
-    .select(
-      `id, institution_id, scope, purpose, starts_at, expires_at, accepted_at, revoked_at,
-       auditor_organization_name, auditor_title, auditor_reference_id, attested_at,
-       attestation_text_hash,
-       institution:institutions(id, name)`
-    )
-    .eq('id', engagementId)
-    .single()
-
-  if (engErr || !engagement) {
-    return NextResponse.json({ error: 'Engagement not found' }, { status: 404 })
-  }
-  const now = new Date()
-  if (
-    engagement.revoked_at ||
-    !engagement.accepted_at ||
-    new Date(engagement.expires_at) <= now ||
-    new Date(engagement.starts_at) > now
-  ) {
+  const engagement = await getOwnedActiveEngagement(supabase, user.id, engagementId)
+  if (!engagement) {
     return NextResponse.json(
-      { error: 'Engagement is not currently active.' },
-      { status: 403 }
+      { error: 'Engagement not found or not active' },
+      { status: 404 }
     )
   }
+
+  const { data: institution } = await supabase
+    .from('institutions')
+    .select('id, name')
+    .eq('id', engagement.institution_id)
+    .maybeSingle()
 
   const { data: rawStudyIds, error: rpcErr } = await supabase.rpc(
     'audit_engagement_study_ids_for_user'
@@ -65,12 +50,11 @@ export async function GET(
 
   const allStudyIds: string[] = [...new Set(((rawStudyIds ?? []) as string[]).filter(Boolean))]
 
-  // Limit to studies covered by this engagement (institution_wide => all institution studies; specific_studies => engagement_studies)
   let scopedStudyIds: string[] = []
   if (engagement.scope === 'institution_wide') {
     const { data: instStudies } = await supabase
       .from('studies')
-      .select('id, title, status, institution_id, created_at, updated_at')
+      .select('id')
       .eq('institution_id', engagement.institution_id)
     scopedStudyIds = (instStudies ?? [])
       .map((s) => s.id)
@@ -90,17 +74,18 @@ export async function GET(
         .from('studies')
         .select('id, title, status, institution_id, created_at, updated_at, description')
         .in('id', scopedStudyIds)
-    : { data: [] as Array<{
-        id: string
-        title: string
-        status: string
-        institution_id: string | null
-        created_at: string
-        updated_at: string
-        description: string | null
-      }> }
+    : {
+        data: [] as Array<{
+          id: string
+          title: string
+          status: string
+          institution_id: string | null
+          created_at: string
+          updated_at: string
+          description: string | null
+        }>,
+      }
 
-  // Records covered by these studies (RLS-allowed)
   const { data: records } = scopedStudyIds.length
     ? await supabase
         .from('records')
@@ -115,6 +100,17 @@ export async function GET(
     : { data: [] as Array<Record<string, unknown>> }
 
   const recordIds = (records ?? []).map((r) => r.id as string)
+
+  const { data: documents } = recordIds.length
+    ? await supabase
+        .from('documents')
+        .select(
+          'id, record_id, file_name, file_hash, file_size, mime_type, uploaded_at, uploaded_by'
+        )
+        .in('record_id', recordIds)
+        .order('uploaded_at', { ascending: true })
+        .limit(DOC_CAP)
+    : { data: [] as Array<Record<string, unknown>> }
 
   const { data: signatures } = recordIds.length
     ? await supabase
@@ -134,8 +130,6 @@ export async function GET(
         .in('record_id', recordIds)
     : { data: [] as Array<Record<string, unknown>> }
 
-  // Pull a bounded slice of audit events for the studies in scope. Use the existing keyset
-  // function so we honor RLS + cutoff. Cap at 5000 lines; auditors who need more can re-run.
   const auditEvents: Record<string, unknown>[] = []
   if (scopedStudyIds.length > 0) {
     let cursor: { timestamp: string; id: string } | null = null
@@ -152,16 +146,14 @@ export async function GET(
     }
   }
 
+  const docs = documents ?? []
   const generatedAt = new Date().toISOString()
   const payload = {
     generated_at: generatedAt,
     engagement: {
       id: engagement.id,
       institution_id: engagement.institution_id,
-      institution_name:
-        Array.isArray(engagement.institution)
-          ? engagement.institution[0]?.name ?? null
-          : (engagement.institution as { name?: string } | null)?.name ?? null,
+      institution_name: institution?.name ?? null,
       scope: engagement.scope,
       purpose: engagement.purpose,
       starts_at: engagement.starts_at,
@@ -173,15 +165,32 @@ export async function GET(
         attested_at: engagement.attested_at ?? null,
         attestation_text_hash: engagement.attestation_text_hash ?? null,
       },
+      coi: {
+        declared_at: engagement.coi_declared_at ?? null,
+        statement_hash: engagement.coi_statement_hash ?? null,
+        has_conflict: engagement.coi_has_conflict ?? null,
+      },
+      engagement_letter: engagement.engagement_letter_file_hash
+        ? {
+            file_name: engagement.engagement_letter_file_name ?? null,
+            file_hash: engagement.engagement_letter_file_hash,
+            file_size: engagement.engagement_letter_file_size ?? null,
+            mime_type: engagement.engagement_letter_mime_type ?? null,
+            uploaded_at: engagement.engagement_letter_uploaded_at ?? null,
+          }
+        : null,
     },
     studies: studies ?? [],
     records: records ?? [],
+    documents: docs,
     signatures: signatures ?? [],
     blockchain_anchors: anchors ?? [],
     audit_events: auditEvents,
     truncation: {
       audit_events_capped_at: 5000,
       audit_events_truncated: auditEvents.length >= 5000,
+      documents_capped_at: DOC_CAP,
+      documents_truncated: docs.length >= DOC_CAP,
     },
   }
 
@@ -191,6 +200,7 @@ export async function GET(
     counts: {
       studies: payload.studies.length,
       records: payload.records.length,
+      documents: payload.documents.length,
       signatures: payload.signatures.length,
       anchors: payload.blockchain_anchors.length,
       audit_events: payload.audit_events.length,
@@ -212,6 +222,7 @@ export async function GET(
       counts: {
         studies: payload.studies.length,
         records: payload.records.length,
+        documents: payload.documents.length,
         signatures: payload.signatures.length,
         anchors: payload.blockchain_anchors.length,
         audit_events: payload.audit_events.length,
@@ -221,13 +232,13 @@ export async function GET(
 
   const url = new URL(request.url)
   const format = url.searchParams.get('format')
-
   const finalPayload = {
     ...payload,
     manifest_hash: manifestHash,
   }
 
-  if (format === 'download') {
+  const asDownload = format !== 'json'
+  if (asDownload) {
     return new NextResponse(JSON.stringify(finalPayload, null, 2), {
       headers: {
         'Content-Type': 'application/json',

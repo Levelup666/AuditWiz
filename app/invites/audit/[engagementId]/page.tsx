@@ -23,11 +23,30 @@ export default async function AcceptAuditEngagementInvitePage({ params }: PagePr
     )
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('account_setup_completed_at, first_name, last_name')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (
+    !profile?.account_setup_completed_at ||
+    !profile.first_name?.trim() ||
+    !profile.last_name?.trim()
+  ) {
+    const setupNext = `/invites/audit/${engagementId}`
+    redirect(
+      `/account/setup?next=${encodeURIComponent(setupNext)}&auditor_invite=1`
+    )
+  }
+
   const { data: engagement, error } = await supabase
     .from('audit_engagements')
     .select(
       `id, institution_id, auditor_email, scope, purpose, starts_at, expires_at,
-       accepted_at, revoked_at, institution:institutions(id, name, metadata)`
+       accepted_at, revoked_at,
+       engagement_letter_file_name, engagement_letter_file_hash, engagement_letter_uploaded_at,
+       institution:institutions(id, name, metadata)`
     )
     .eq('id', engagementId)
     .single()
@@ -150,11 +169,21 @@ export default async function AcceptAuditEngagementInvitePage({ params }: PagePr
           </div>
           <AuditEngagementDecisionActions
             engagementId={engagement.id}
+            institutionId={engagement.institution_id}
             referencePolicy={{
               label: refPolicy.label,
               required: refPolicy.required,
               formatHint: refPolicy.format,
             }}
+            engagementLetter={
+              engagement.engagement_letter_file_hash
+                ? {
+                    fileName: engagement.engagement_letter_file_name ?? 'engagement-letter.pdf',
+                    fileHash: engagement.engagement_letter_file_hash,
+                    uploadedAt: engagement.engagement_letter_uploaded_at,
+                  }
+                : null
+            }
           />
         </CardContent>
       </Card>

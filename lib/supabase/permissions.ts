@@ -115,6 +115,34 @@ export async function getStudyMemberPermissions(
   const roles = defs.map((d) => d.slug)
   const primary = defs[0]!.slug as StudyRole | string
 
+  const { memberWritesBlockedByCookie } = await import(
+    '@/lib/auditor/assert-member-writes-allowed'
+  )
+  const { ACTIVE_CONTEXT_COOKIE } = await import('@/lib/auditor/active-context')
+  const { cookies } = await import('next/headers')
+  const jar = await cookies()
+  const auditorReadonly = memberWritesBlockedByCookie(
+    jar.get(ACTIVE_CONTEXT_COOKIE)?.value
+  )
+
+  if (auditorReadonly) {
+    return {
+      roles,
+      role: primary,
+      can_view: merged.can_view,
+      can_comment: false,
+      can_review: false,
+      can_approve: false,
+      can_share: false,
+      can_manage_members: false,
+      can_edit_study_settings: false,
+      can_create_records: false,
+      can_moderate_record_status: false,
+      can_anchor_records: false,
+      can_access_audit_hub: merged.can_access_audit_hub,
+    }
+  }
+
   return {
     roles,
     role: primary,

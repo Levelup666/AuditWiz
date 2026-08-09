@@ -27,6 +27,21 @@ export default async function AuditorLandingPage() {
   const engagements = await listActiveEngagementsForUser(supabase, user.id)
   const scopedStudies = await listEngagementScopedStudiesForUser(supabase, user.id)
 
+  const studyToEngagement = new Map<string, string>()
+  for (const e of engagements) {
+    if (e.scope === 'specific_studies') {
+      for (const s of e.studies) {
+        if (s.study_id) studyToEngagement.set(s.study_id, e.id)
+      }
+    } else {
+      for (const s of scopedStudies) {
+        if (s.institution_id === e.institution_id) {
+          studyToEngagement.set(s.id, e.id)
+        }
+      }
+    }
+  }
+
   return (
     <div className="space-y-6">
       {engagements[0] ? (
@@ -113,6 +128,25 @@ export default async function AuditorLandingPage() {
                         ) : null}
                       </div>
                     ) : null}
+                    <div className="text-xs text-muted-foreground">
+                      {e.engagement_letter_file_hash ? (
+                        <a
+                          className="text-primary hover:underline"
+                          href={`/api/auditor/engagements/${e.id}/letter`}
+                        >
+                          Engagement letter
+                        </a>
+                      ) : (
+                        <span>No engagement letter on file</span>
+                      )}
+                      {e.coi_declared_at ? (
+                        <>
+                          {' · '}
+                          COI
+                          {e.coi_has_conflict ? ' (conflict disclosed)' : ' clear'}
+                        </>
+                      ) : null}
+                    </div>
                     {e.scope === 'specific_studies' && studyHrefs.length > 0 && (
                       <div>
                         <div className="text-xs font-medium text-muted-foreground">
@@ -122,7 +156,7 @@ export default async function AuditorLandingPage() {
                           {studyHrefs.slice(0, 5).map((s) => (
                             <li key={s.id} className="truncate">
                               <Link
-                                href={`/studies/${s.id}`}
+                                href={`/auditor/engagements/${e.id}/studies/${s.id}`}
                                 className="text-primary hover:underline"
                               >
                                 {s.title}
@@ -139,15 +173,16 @@ export default async function AuditorLandingPage() {
                     )}
                     <div className="flex flex-wrap gap-2 pt-2">
                       <Button asChild size="sm" variant="outline">
+                        <Link href={`/auditor/engagements/${e.id}`}>Open engagement</Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
                         <Link href={`/logs`}>
                           <Activity className="mr-2 h-4 w-4" />
                           Audit logs
                         </Link>
                       </Button>
                       <Button asChild size="sm">
-                        <a
-                          href={`/api/auditor/engagements/${e.id}/evidence-pack?format=download`}
-                        >
+                        <a href={`/api/auditor/engagements/${e.id}/evidence-pack`}>
                           <Download className="mr-2 h-4 w-4" />
                           Evidence pack
                         </a>
@@ -186,7 +221,12 @@ export default async function AuditorLandingPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {scopedStudies.map((s) => (
+                    {scopedStudies.map((s) => {
+                      const engagementId = studyToEngagement.get(s.id)
+                      const href = engagementId
+                        ? `/auditor/engagements/${engagementId}/studies/${s.id}`
+                        : `/auditor`
+                      return (
                       <TableRow key={s.id}>
                         <TableCell className="font-medium">{s.title}</TableCell>
                         <TableCell>
@@ -196,11 +236,12 @@ export default async function AuditorLandingPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <Button asChild size="sm" variant="outline">
-                            <Link href={`/studies/${s.id}`}>View</Link>
+                            <Link href={href}>View</Link>
                           </Button>
                         </TableCell>
                       </TableRow>
-                    ))}
+                      )
+                    })}
                   </TableBody>
                 </Table>
               )}
@@ -215,8 +256,8 @@ export default async function AuditorLandingPage() {
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>
-            <strong>Read records, signatures, and anchors</strong> for studies in scope. The
-            amber banner on study and record pages confirms your engagement window.
+            <strong>Read records, signatures, and anchors</strong> for studies in scope from the
+            auditor engagement pages.
           </p>
           <p>
             <strong>Inspect the audit log</strong> via Logs. Download CSV exports for ad-hoc

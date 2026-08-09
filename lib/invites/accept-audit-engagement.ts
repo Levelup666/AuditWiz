@@ -6,18 +6,58 @@ import {
   validateAuditorCredentials,
   type AuditorCredentialsInput,
 } from '@/lib/auditor/auditor-credentials'
+import {
+  AUDITOR_COI_STATEMENT,
+  validateAuditorCoi,
+  type AuditorCoiInput,
+} from '@/lib/auditor/auditor-coi'
 
 export type AcceptAuditEngagementResult =
   | { ok: true; engagementId: string; institutionId: string }
   | { ok: false; status: number; error: string; code?: string }
 
+function mapAcceptRpcError(message: string | undefined): AcceptAuditEngagementResult {
+  const m = (message ?? '').toLowerCase()
+  if (m.includes('not_found') || m.includes('p0002')) {
+    return { ok: false, status: 404, error: 'Engagement not found' }
+  }
+  if (m.includes('revoked')) {
+    return { ok: false, status: 410, error: 'This audit engagement was revoked.' }
+  }
+  if (m.includes('expired')) {
+    return { ok: false, status: 410, error: 'This audit engagement has expired.' }
+  }
+  if (m.includes('already_accepted')) {
+    return {
+      ok: false,
+      status: 409,
+      error: 'This engagement was already accepted by another user.',
+    }
+  }
+  if (m.includes('email_mismatch') || m.includes('42501') || m.includes('not_authenticated')) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'This audit engagement was issued to a different email address.',
+    }
+  }
+  if (m.includes('organization_required') || m.includes('attestation_required')) {
+    return { ok: false, status: 400, error: message ?? 'Credentials required', code: 'credentials_required' }
+  }
+  if (m.includes('coi_')) {
+    return { ok: false, status: 400, error: message ?? 'COI declaration required', code: 'coi_required' }
+  }
+  return {
+    ok: false,
+    status: 500,
+    error: message ?? 'Could not accept this audit engagement.',
+  }
+}
+
 /**
- * Accept an audit engagement: ties the auditor's auth user_id to the engagement, records
- * attested credentials, and emits audit events. The Supabase session must belong to the
- * invitee email — RLS enforces that via the "Invitee can accept own pending engagement" policy.
- *
- * Must NOT call study collaboration policy helpers; audit engagements are out of scope for
- * allow_external_collaborators (institution members only on studies).
+ * Accept an audit engagement via SECURITY DEFINER RPC (column-safe).
+ * App validates credentials/COI and hashes statements; RPC enforces required fields
+ * and email match. Must NOT call study collaboration policy helpers.
  */
 export async function acceptAuditEngagementForUser(
   supabase: SupabaseClient,
@@ -25,7 +65,8 @@ export async function acceptAuditEngagementForUser(
   userEmail: string | undefined,
   institutionId: string,
   engagementId: string,
-  credentialsInput: AuditorCredentialsInput
+  credentialsInput: AuditorCredentialsInput,
+  coiInput: AuditorCoiInput
 ): Promise<AcceptAuditEngagementResult> {
   const { data: engagement, error: fetchError } = await supabase
     .from('audit_engagements')
@@ -79,48 +120,60 @@ export async function acceptAuditEngagementForUser(
     }
   }
 
+  const coiValidated = validateAuditorCoi(coiInput)
+  if (!coiValidated.ok) {
+    return {
+      ok: false,
+      status: 400,
+      error: coiValidated.error,
+      code: 'coi_required',
+    }
+  }
+
   const { credentials } = validated
-  const nowIso = new Date().toISOString()
+  const { coi } = coiValidated
   const attestationTextHash = await generateHash({
     statement: AUDITOR_ATTESTATION_STATEMENT,
     organization: credentials.organizationName,
     title: credentials.title,
     reference_id: credentials.referenceId,
   })
+  const coiStatementHash = await generateHash({
+    statement: AUDITOR_COI_STATEMENT,
+    has_conflict: coi.hasConflict,
+    disclosure: coi.disclosure,
+  })
 
-  const { data: updated, error: updateError } = await supabase
-    .from('audit_engagements')
-    .update({
-      accepted_at: nowIso,
-      auditor_user_id: userId,
-      auditor_organization_name: credentials.organizationName,
-      auditor_title: credentials.title,
-      auditor_reference_id: credentials.referenceId,
-      attested_at: nowIso,
-      attestation_text_hash: attestationTextHash,
-    })
-    .eq('id', engagementId)
-    .is('accepted_at', null)
-    .is('revoked_at', null)
-    .gt('expires_at', nowIso)
-    .select('id')
+  const { data: rpcId, error: rpcError } = await supabase.rpc('accept_audit_engagement', {
+    p_engagement_id: engagementId,
+    p_organization_name: credentials.organizationName,
+    p_title: credentials.title,
+    p_reference_id: credentials.referenceId,
+    p_attestation_text_hash: attestationTextHash,
+    p_coi_statement_hash: coiStatementHash,
+    p_coi_has_conflict: coi.hasConflict,
+    p_coi_disclosure: coi.disclosure,
+  })
 
-  if (updateError || !updated?.length) {
+  if (rpcError) {
+    return mapAcceptRpcError(rpcError.message)
+  }
+  if (!rpcId) {
     return {
       ok: false,
       status: 500,
-      error:
-        updateError?.message ??
-        'Could not accept this audit engagement. It may have just been revoked or expired.',
+      error: 'Could not accept this audit engagement. It may have just been revoked or expired.',
     }
   }
 
+  const nowIso = new Date().toISOString()
   const acceptHash = await generateHash({
     engagement_id: engagementId,
     institution_id: institutionId,
     auditor_user_id: userId,
     accepted_at: nowIso,
     attestation_text_hash: attestationTextHash,
+    coi_statement_hash: coiStatementHash,
     auditor_organization_name: credentials.organizationName,
     auditor_reference_id: credentials.referenceId,
   })
@@ -142,8 +195,10 @@ export async function acceptAuditEngagementForUser(
       attestation_text_hash: attestationTextHash,
       auditor_organization_name: credentials.organizationName,
       auditor_title: credentials.title,
-      // Hash of reference id only in ledger metadata for attribution without storing raw id twice
       auditor_reference_id_present: Boolean(credentials.referenceId),
+      coi_statement_hash: coiStatementHash,
+      coi_has_conflict: coi.hasConflict,
+      coi_disclosure_present: Boolean(coi.disclosure),
     }
   )
 

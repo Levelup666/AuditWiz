@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { canApproveRecord, canReviewRecord } from '@/lib/supabase/permissions'
 import { assertStudyIsActive } from '@/lib/supabase/study-status'
+import { memberWriteForbiddenResponse } from '@/lib/auditor/assert-member-writes-allowed'
 
 const VALID_INTENTS = ['review', 'approval', 'amendment', 'rejection'] as const
 
@@ -9,6 +10,9 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ recordId: string }> }
 ) {
+  const blocked = await memberWriteForbiddenResponse()
+  if (blocked) return blocked
+
   const { recordId } = await params
   const supabase = await createClient()
   const {

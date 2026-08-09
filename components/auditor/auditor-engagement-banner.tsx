@@ -57,7 +57,8 @@ export default function AuditorEngagementBanner({
           ) : null}
           <div className="mt-1 text-xs text-amber-800/80">
             You can read records, signatures, anchors, and audit logs in scope. You cannot edit,
-            sign, approve, or anchor anything. All access is logged.
+            sign, approve, or anchor anything. Hub, study, and record views are logged to the
+            engagement access trail (deduped per surface during a session).
           </div>
         </div>
       </div>

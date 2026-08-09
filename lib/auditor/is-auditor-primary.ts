@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { userHasActiveEngagement } from '@/lib/auditor/engagements'
 
-async function userHasActiveMembership(
+/** True when the user has any active institution or study membership. */
+export async function userHasActiveMembership(
   supabase: SupabaseClient,
   userId: string
 ): Promise<boolean> {
@@ -31,5 +32,17 @@ export async function userIsAuditorPrimary(
   userId: string
 ): Promise<boolean> {
   if (await userHasActiveMembership(supabase, userId)) return false
+  return userHasActiveEngagement(userId)
+}
+
+/**
+ * Dual-role: active engagement AND at least one membership.
+ * These users choose an active_context (auditor | member) for UI shell separation.
+ */
+export async function userIsDualRoleAuditor(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<boolean> {
+  if (!(await userHasActiveMembership(supabase, userId))) return false
   return userHasActiveEngagement(userId)
 }

@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { AsyncStatusLine } from '@/components/ui/async-status-line'
 import { ButtonLoadingLabel } from '@/components/ui/button-loading-label'
 import { toast } from '@/lib/toast'
 import { notifyInvitesChanged } from '@/lib/invites/notify-invites-changed'
 import { AUDITOR_ATTESTATION_STATEMENT } from '@/lib/auditor/auditor-credentials'
+import { AUDITOR_COI_STATEMENT } from '@/lib/auditor/auditor-coi'
 
 type Busy = 'accept' | 'decline' | null
 
@@ -19,12 +21,22 @@ type ReferencePolicy = {
   formatHint: string | null
 }
 
+type EngagementLetterInfo = {
+  fileName: string
+  fileHash: string
+  uploadedAt: string | null
+}
+
 export default function AuditEngagementDecisionActions({
   engagementId,
+  institutionId,
   referencePolicy,
+  engagementLetter,
 }: {
   engagementId: string
+  institutionId: string
   referencePolicy: ReferencePolicy
+  engagementLetter: EngagementLetterInfo | null
 }) {
   const router = useRouter()
   const [busy, setBusy] = useState<Busy>(null)
@@ -32,7 +44,12 @@ export default function AuditEngagementDecisionActions({
   const [title, setTitle] = useState('')
   const [referenceId, setReferenceId] = useState('')
   const [attested, setAttested] = useState(false)
+  const [coiDeclared, setCoiDeclared] = useState(false)
+  const [coiHasConflict, setCoiHasConflict] = useState(false)
+  const [coiDisclosure, setCoiDisclosure] = useState('')
+  const [letterAcknowledged, setLetterAcknowledged] = useState(false)
   const disabled = busy !== null
+  const letterRequired = Boolean(engagementLetter)
 
   async function handleAccept() {
     if (!organizationName.trim()) {
@@ -47,6 +64,24 @@ export default function AuditEngagementDecisionActions({
       toast.error('Attestation required', 'Confirm the attestation before accepting.')
       return
     }
+    if (!coiDeclared) {
+      toast.error(
+        'COI declaration required',
+        'Confirm the conflict-of-interest declaration before accepting.'
+      )
+      return
+    }
+    if (coiHasConflict && coiDisclosure.trim().length < 8) {
+      toast.error('Disclosure required', 'Briefly describe the potential conflict.')
+      return
+    }
+    if (letterRequired && !letterAcknowledged) {
+      toast.error(
+        'Letter acknowledgment required',
+        'Confirm you have reviewed the engagement letter before accepting.'
+      )
+      return
+    }
 
     setBusy('accept')
     try {
@@ -58,6 +93,9 @@ export default function AuditEngagementDecisionActions({
           title: title.trim() || undefined,
           reference_id: referenceId.trim() || undefined,
           attested: true,
+          coi_declared: true,
+          coi_has_conflict: coiHasConflict,
+          coi_disclosure: coiHasConflict ? coiDisclosure.trim() : undefined,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -71,7 +109,7 @@ export default function AuditEngagementDecisionActions({
       if (!res.ok) throw new Error(data.error || res.statusText)
       toast.success('Audit engagement accepted')
       notifyInvitesChanged()
-      router.push('/auditor')
+      router.push(`/auditor/engagements/${engagementId}`)
       router.refresh()
     } catch (e) {
       toast.error('Accept failed', e instanceof Error ? e.message : 'Failed')
@@ -101,8 +139,15 @@ export default function AuditEngagementDecisionActions({
 
   return (
     <div className="space-y-4">
+      <ol className="list-decimal space-y-1 pl-5 text-xs text-muted-foreground">
+        <li>Confirm your audit organization credentials</li>
+        <li>Complete the conflict-of-interest declaration</li>
+        {letterRequired ? <li>Acknowledge the engagement letter</li> : null}
+        <li>Accept to receive read-only access</li>
+      </ol>
+
       <div className="space-y-3 rounded-md border border-border bg-muted/20 p-4">
-        <p className="text-sm font-medium text-foreground">Auditor credentials</p>
+        <p className="text-sm font-medium text-foreground">1. Auditor credentials</p>
         <p className="text-xs text-muted-foreground">
           Required before access is granted. These details appear on your engagement banner and
           evidence pack.
@@ -157,6 +202,77 @@ export default function AuditEngagementDecisionActions({
           <span>{AUDITOR_ATTESTATION_STATEMENT}</span>
         </label>
       </div>
+
+      <div className="space-y-3 rounded-md border border-border bg-muted/20 p-4">
+        <p className="text-sm font-medium text-foreground">2. Conflict of interest</p>
+        <label className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={coiDeclared}
+            onChange={(e) => setCoiDeclared(e.target.checked)}
+            disabled={disabled}
+          />
+          <span>{AUDITOR_COI_STATEMENT}</span>
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={coiHasConflict}
+            onChange={(e) => {
+              setCoiHasConflict(e.target.checked)
+              if (!e.target.checked) setCoiDisclosure('')
+            }}
+            disabled={disabled}
+          />
+          <span>I have a potential conflict to disclose</span>
+        </label>
+        {coiHasConflict ? (
+          <div className="space-y-2">
+            <Label htmlFor="coi-disclosure">Conflict disclosure *</Label>
+            <Textarea
+              id="coi-disclosure"
+              value={coiDisclosure}
+              onChange={(e) => setCoiDisclosure(e.target.value)}
+              placeholder="Describe the relationship or interest relevant to this engagement."
+              disabled={disabled}
+              rows={3}
+            />
+          </div>
+        ) : null}
+      </div>
+
+      {engagementLetter ? (
+        <div className="space-y-3 rounded-md border border-border bg-muted/20 p-4">
+          <p className="text-sm font-medium text-foreground">3. Engagement letter</p>
+          <p className="text-xs text-muted-foreground">
+            Review the scope letter issued by the institution before accepting.
+          </p>
+          <div className="text-sm">
+            <a
+              className="text-primary hover:underline"
+              href={`/api/institutions/${institutionId}/auditors/${engagementId}/letter`}
+            >
+              {engagementLetter.fileName}
+            </a>
+            <div className="mt-1 font-mono text-xs text-muted-foreground">
+              SHA-256 {engagementLetter.fileHash.slice(0, 16)}…
+            </div>
+          </div>
+          <label className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={letterAcknowledged}
+              onChange={(e) => setLetterAcknowledged(e.target.checked)}
+              disabled={disabled}
+            />
+            <span>
+              I have reviewed this engagement letter and understand the read-only scope of access.
+            </span>
+          </label>
+        </div>
+      ) : null}
 
       <AsyncStatusLine
         message={

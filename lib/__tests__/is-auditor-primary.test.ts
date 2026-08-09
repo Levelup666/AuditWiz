@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { userIsAuditorPrimary } from '@/lib/auditor/is-auditor-primary'
+import { userIsAuditorPrimary, userIsDualRoleAuditor } from '@/lib/auditor/is-auditor-primary'
 
 vi.mock('@/lib/auditor/engagements', () => ({
   userHasActiveEngagement: vi.fn(),
@@ -53,5 +53,24 @@ describe('userIsAuditorPrimary', () => {
     mockHasEngagement.mockResolvedValue(false)
     const supabase = mockSupabase({ inst: 0, study: 0 })
     await expect(userIsAuditorPrimary(supabase, 'u1')).resolves.toBe(false)
+  })
+})
+
+describe('userIsDualRoleAuditor', () => {
+  beforeEach(() => {
+    mockHasEngagement.mockReset()
+  })
+
+  it('is true when membership and engagement', async () => {
+    mockHasEngagement.mockResolvedValue(true)
+    const supabase = mockSupabase({ inst: 1, study: 0 })
+    await expect(userIsDualRoleAuditor(supabase, 'u1')).resolves.toBe(true)
+  })
+
+  it('is false without membership', async () => {
+    mockHasEngagement.mockResolvedValue(true)
+    const supabase = mockSupabase({ inst: 0, study: 0 })
+    await expect(userIsDualRoleAuditor(supabase, 'u1')).resolves.toBe(false)
+    expect(mockHasEngagement).not.toHaveBeenCalled()
   })
 })

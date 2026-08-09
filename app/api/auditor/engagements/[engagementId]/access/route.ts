@@ -5,9 +5,26 @@ import { createAuditEvent } from '@/lib/supabase/audit'
 import { generateHash } from '@/lib/crypto'
 
 const COOKIE_PREFIX = 'aw_eng_access_'
+/** Per-surface/entity dedupe within a browser session (~12h). */
 const COOKIE_MAX_AGE_SEC = 60 * 60 * 12
 
 type Surface = 'auditor_hub' | 'study' | 'record' | 'logs'
+
+function dedupeCookieName(
+  engagementId: string,
+  surface: Surface,
+  studyId: string | null,
+  recordId: string | null
+): string {
+  const entity =
+    surface === 'record' && recordId
+      ? `record_${recordId}`
+      : surface === 'study' && studyId
+        ? `study_${studyId}`
+        : surface
+  // Cookie names must be modest length; truncate engagement id.
+  return `${COOKIE_PREFIX}${engagementId.slice(0, 8)}_${entity}`.slice(0, 64)
+}
 
 export async function POST(
   request: NextRequest,
@@ -43,7 +60,7 @@ export async function POST(
   }
 
   const jar = await cookies()
-  const name = `${COOKIE_PREFIX}${engagementId}`
+  const name = dedupeCookieName(engagementId, surface, studyId, recordId)
   if (jar.get(name)?.value === '1') {
     return NextResponse.json({ emitted: false, deduped: true })
   }

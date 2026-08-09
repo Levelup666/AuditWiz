@@ -20,6 +20,7 @@ import { userHasUsableAuthEmail } from '@/lib/auth/orcid-email'
 import {
   isSupabaseSamePasswordError,
   parseRotationDays,
+  type PasswordRotationDays,
   userSubjectToPasswordPolicy,
   validatePassword,
 } from '@/lib/auth/password-policy'
@@ -27,6 +28,9 @@ import {
   auditPasswordChanged,
   auditPasswordRotationPreferenceUpdated,
 } from '@/lib/auth/password-audit'
+
+/** Auditor-invite setup keeps a minimal form; default interval so the rotation gate is satisfied. */
+const AUDITOR_INVITE_DEFAULT_ROTATION_DAYS: PasswordRotationDays = 90
 
 function safeNextPath(next: string | null | undefined): string {
   return safeAppPath(next, '/invites')
@@ -118,7 +122,7 @@ export async function saveAccountSetup(formData: FormData) {
   }
 
   const subjectToPolicy = userSubjectToPasswordPolicy(actor, prof)
-  const rotationDaysParsed = parseRotationDays(rotationDaysRaw)
+  let rotationDaysParsed = parseRotationDays(rotationDaysRaw)
 
   if (password || confirmPassword) {
     if (password !== confirmPassword) {
@@ -138,6 +142,15 @@ export async function saveAccountSetup(formData: FormData) {
     } else if (subjectToPolicy) {
       await auditPasswordChanged(actor.id)
     }
+  }
+
+  if (
+    auditorInviteFlow &&
+    subjectToPolicy &&
+    !prof?.password_rotation_days &&
+    !rotationDaysParsed
+  ) {
+    rotationDaysParsed = AUDITOR_INVITE_DEFAULT_ROTATION_DAYS
   }
 
   if (subjectToPolicy && !auditorInviteFlow && !prof?.password_rotation_days) {

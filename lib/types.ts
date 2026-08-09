@@ -31,6 +31,7 @@ export type AuditActionType =
   | 'audit_engagement_granted' | 'audit_engagement_accepted' | 'audit_engagement_revoked'
   | 'audit_engagement_extended' | 'audit_engagement_expired'
   | 'audit_engagement_accessed' | 'audit_engagement_export'
+  | 'audit_engagement_letter_uploaded'
   | 'password_changed' | 'password_rotation_preference_updated';
 
 export interface Institution {
@@ -218,6 +219,16 @@ export interface AuditEngagement {
   auditor_reference_id?: string | null;
   attested_at?: string | null;
   attestation_text_hash?: string | null;
+  engagement_letter_file_name?: string | null;
+  engagement_letter_file_path?: string | null;
+  engagement_letter_file_hash?: string | null;
+  engagement_letter_file_size?: number | null;
+  engagement_letter_mime_type?: string | null;
+  engagement_letter_uploaded_at?: string | null;
+  coi_declared_at?: string | null;
+  coi_statement_hash?: string | null;
+  coi_has_conflict?: boolean | null;
+  coi_disclosure?: string | null;
 }
 
 export interface AuditEngagementStudy {

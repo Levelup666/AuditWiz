@@ -27,6 +27,8 @@ export async function listActiveEngagementsForUser(
       granted_by, last_sent_at, resend_count,
       invite_first_opened_at, expiry_audit_logged_at, created_at,
       auditor_organization_name, auditor_title, auditor_reference_id, attested_at,
+      engagement_letter_file_name, engagement_letter_file_hash, engagement_letter_uploaded_at,
+      coi_declared_at, coi_has_conflict,
       institution:institutions(id, name)
     `
     )
@@ -86,6 +88,11 @@ export async function listActiveEngagementsForUser(
       auditor_title: r.auditor_title ?? null,
       auditor_reference_id: r.auditor_reference_id ?? null,
       attested_at: r.attested_at ?? null,
+      engagement_letter_file_name: r.engagement_letter_file_name ?? null,
+      engagement_letter_file_hash: r.engagement_letter_file_hash ?? null,
+      engagement_letter_uploaded_at: r.engagement_letter_uploaded_at ?? null,
+      coi_declared_at: r.coi_declared_at ?? null,
+      coi_has_conflict: r.coi_has_conflict ?? null,
       institution_name: institution?.name ?? null,
       studies: studiesByEngagement.get(r.id) ?? [],
     }

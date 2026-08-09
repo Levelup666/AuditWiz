@@ -5,8 +5,30 @@ import {
   userNeedsOrcidEmailGateRedirect,
 } from '@/lib/auth/orcid-email-gate'
 import { getPasswordGateRedirect, pathBypassesPasswordGate } from '@/lib/auth/password-rotation-gate'
+import { ACTIVE_CONTEXT_COOKIE } from '@/lib/auditor/active-context'
+import { auditorContextBlocksApiWrite } from '@/lib/auditor/assert-member-writes-allowed'
 
 export async function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname
+
+  // Dual-role sandbox: auditor context cannot mutate member APIs.
+  if (
+    auditorContextBlocksApiWrite(
+      request.method,
+      pathname,
+      request.cookies.get(ACTIVE_CONTEXT_COOKIE)?.value
+    )
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          'Switch to Member context to make changes. Auditor context is read-only.',
+        code: 'auditor_context_readonly',
+      },
+      { status: 403 }
+    )
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   })
@@ -37,13 +59,12 @@ export async function proxy(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser()
 
-    const pathname = request.nextUrl.pathname
-
-    // Protect dashboard/study routes - require authentication
+    // Protect dashboard/study/auditor routes - require authentication
     if (
       pathname.startsWith('/studies') ||
       pathname.startsWith('/dashboard') ||
-      pathname.startsWith('/logs')
+      pathname.startsWith('/logs') ||
+      pathname.startsWith('/auditor')
     ) {
       if (!user) {
         const url = request.nextUrl.clone()
@@ -106,6 +127,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

@@ -131,6 +131,10 @@ export default function FloatingNav() {
     canViewLogs,
     hasActiveAuditorEngagement,
     auditorPrimary,
+    dualRole,
+    activeContext,
+    presentAuditorShell,
+    setActiveContext,
     orcidIdentity,
     unreadNotificationCount,
   } = ctx ?? {
@@ -140,6 +144,10 @@ export default function FloatingNav() {
     canViewLogs: false,
     hasActiveAuditorEngagement: false,
     auditorPrimary: false,
+    dualRole: false,
+    activeContext: null as 'auditor' | 'member' | null,
+    presentAuditorShell: false,
+    setActiveContext: async () => {},
     orcidIdentity: null as OrcidSessionIdentity | null,
     unreadNotificationCount: null as number | null,
   }
@@ -152,8 +160,9 @@ export default function FloatingNav() {
     return null
   }
 
-  // Engagement-only users get a dedicated shell: Auditor, Logs, Profile (+ invites).
-  const navigation: NavItem[] = auditorPrimary
+  // Engagement-only or dual-role in auditor context: dedicated shell.
+  const useAuditorShell = Boolean(presentAuditorShell ?? auditorPrimary)
+  const navigation: NavItem[] = useAuditorShell
     ? [
         auditorNavItem,
         ...(canViewLogs ? [logsNavItem] : []),
@@ -203,6 +212,52 @@ export default function FloatingNav() {
               </span>
             </div>
             <div className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+              {dualRole ? (
+                <div className="mb-3 rounded-md border border-gray-700 p-2">
+                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                    Active context
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      className={cn(
+                        'flex-1 rounded px-2 py-1 text-xs',
+                        activeContext === 'member'
+                          ? 'bg-gray-700 text-white'
+                          : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                      )}
+                      onClick={() => {
+                        void setActiveContext('member').then(() => {
+                          router.push('/studies')
+                          router.refresh()
+                        })
+                      }}
+                    >
+                      Member
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        'flex-1 rounded px-2 py-1 text-xs',
+                        activeContext === 'auditor'
+                          ? 'bg-gray-700 text-white'
+                          : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                      )}
+                      onClick={() => {
+                        void setActiveContext('auditor').then(() => {
+                          router.push('/auditor')
+                          router.refresh()
+                        })
+                      }}
+                    >
+                      Auditor
+                    </button>
+                  </div>
+                  <p className="mt-2 text-[10px] leading-snug text-gray-500">
+                    Auditor mode is read-only. Switch to Member to create, sign, or manage.
+                  </p>
+                </div>
+              ) : null}
               {navigation.map((item) => (
                 <FloatingNavItem
                   key={item.name}

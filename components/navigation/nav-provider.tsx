@@ -23,6 +23,14 @@ type NavContextType = {
   hasActiveAuditorEngagement: boolean | null
   /** Null while loading; engagement-only user (no study/institution membership). */
   auditorPrimary: boolean | null
+  /** Null while loading; membership + engagement (context switch available). */
+  dualRole: boolean | null
+  /** Null while loading; preferred shell when dual-role (or forced when auditor-primary). */
+  activeContext: 'auditor' | 'member' | null
+  /** Null while loading; whether UI should present the auditor shell. */
+  presentAuditorShell: boolean | null
+  /** Switch dual-role context; no-op when not dual-role. */
+  setActiveContext: (context: 'auditor' | 'member') => Promise<void>
   /** Null while loading; verified ORCID linked to the current account (if any). */
   orcidIdentity: OrcidSessionIdentity | null
   /** Null while loading; unread in-app notification count. */
@@ -44,6 +52,9 @@ export default function NavProvider({ children }: { children: React.ReactNode })
     boolean | null
   >(null)
   const [auditorPrimary, setAuditorPrimary] = useState<boolean | null>(null)
+  const [dualRole, setDualRole] = useState<boolean | null>(null)
+  const [activeContext, setActiveContextState] = useState<'auditor' | 'member' | null>(null)
+  const [presentAuditorShell, setPresentAuditorShell] = useState<boolean | null>(null)
   const [signedInViaOrcid, setSignedInViaOrcid] = useState<boolean>(false)
   const [orcidIdentity, setOrcidIdentity] = useState<OrcidSessionIdentity | null>(null)
   const [unreadNotificationCount, setUnreadNotificationCount] = useState<number | null>(null)
@@ -90,27 +101,68 @@ export default function NavProvider({ children }: { children: React.ReactNode })
     if (!isAuthenticated) {
       setHasActiveAuditorEngagement(null)
       setAuditorPrimary(null)
+      setDualRole(null)
+      setActiveContextState(null)
+      setPresentAuditorShell(null)
       return
     }
     let cancelled = false
     fetch('/api/auditor/access')
-      .then((r) => (r.ok ? r.json() : { hasActiveEngagement: false, auditorPrimary: false }))
-      .then((d: { hasActiveEngagement?: boolean; auditorPrimary?: boolean }) => {
-        if (!cancelled) {
-          setHasActiveAuditorEngagement(Boolean(d?.hasActiveEngagement))
-          setAuditorPrimary(Boolean(d?.auditorPrimary))
+      .then((r) =>
+        r.ok
+          ? r.json()
+          : {
+              hasActiveEngagement: false,
+              auditorPrimary: false,
+              dualRole: false,
+              activeContext: null,
+              presentAuditorShell: false,
+            }
+      )
+      .then(
+        (d: {
+          hasActiveEngagement?: boolean
+          auditorPrimary?: boolean
+          dualRole?: boolean
+          activeContext?: 'auditor' | 'member' | null
+          presentAuditorShell?: boolean
+        }) => {
+          if (!cancelled) {
+            setHasActiveAuditorEngagement(Boolean(d?.hasActiveEngagement))
+            setAuditorPrimary(Boolean(d?.auditorPrimary))
+            setDualRole(Boolean(d?.dualRole))
+            setActiveContextState(d?.activeContext ?? null)
+            setPresentAuditorShell(Boolean(d?.presentAuditorShell))
+          }
         }
-      })
+      )
       .catch(() => {
         if (!cancelled) {
           setHasActiveAuditorEngagement(false)
           setAuditorPrimary(false)
+          setDualRole(false)
+          setActiveContextState(null)
+          setPresentAuditorShell(false)
         }
       })
     return () => {
       cancelled = true
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, pathname])
+
+  async function setActiveContext(context: 'auditor' | 'member') {
+    const res = await fetch('/api/auditor/context', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context }),
+    })
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.error || res.statusText)
+    }
+    setActiveContextState(context)
+    setPresentAuditorShell(context === 'auditor')
+  }
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -175,6 +227,10 @@ export default function NavProvider({ children }: { children: React.ReactNode })
         canViewLogs,
         hasActiveAuditorEngagement,
         auditorPrimary,
+        dualRole,
+        activeContext,
+        presentAuditorShell,
+        setActiveContext,
         orcidIdentity,
         unreadNotificationCount,
       }}

@@ -47,6 +47,11 @@ type EngagementRow = {
   invite_first_opened_at: string | null
   batch_id: string | null
   created_at: string
+  engagement_letter_file_name: string | null
+  engagement_letter_file_hash: string | null
+  engagement_letter_uploaded_at: string | null
+  coi_has_conflict: boolean | null
+  coi_declared_at: string | null
   studies: ScopedStudy[]
 }
 
@@ -76,6 +81,7 @@ export default function InstitutionAuditorsManager({
   const [selectedStudyIds, setSelectedStudyIds] = useState<string[]>([])
   const [overrideStudyMemberConflict, setOverrideStudyMemberConflict] = useState(false)
   const [overrideReason, setOverrideReason] = useState('')
+  const [letterFile, setLetterFile] = useState<File | null>(null)
 
   const fetchList = useCallback(async () => {
     setLoading(true)
@@ -105,6 +111,10 @@ export default function InstitutionAuditorsManager({
       toast.error('Email required', 'Enter at least one auditor email address.')
       return
     }
+    if (!letterFile) {
+      toast.error('Letter required', 'Upload the engagement letter / scope PDF before issuing.')
+      return
+    }
     if (scope === 'specific_studies' && selectedStudyIds.length === 0) {
       toast.error('Select studies', 'Pick at least one study or switch to institution-wide.')
       return
@@ -118,18 +128,22 @@ export default function InstitutionAuditorsManager({
     }
     setSubmitting(true)
     try {
+      const form = new FormData()
+      form.append('auditor_emails', auditorEmails.join('\n'))
+      form.append('purpose', purpose.trim())
+      form.append('scope', scope)
+      form.append('duration_days', String(Number(duration) || 30))
+      form.append('study_ids', JSON.stringify(scope === 'specific_studies' ? selectedStudyIds : []))
+      form.append(
+        'override_study_member_conflict',
+        overrideStudyMemberConflict ? 'true' : 'false'
+      )
+      if (overrideReason.trim()) form.append('override_reason', overrideReason.trim())
+      form.append('file', letterFile)
+
       const res = await fetch(`/api/institutions/${institutionId}/auditors`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          auditor_emails: auditorEmails,
-          purpose: purpose.trim() || null,
-          scope,
-          duration_days: Number(duration) || 30,
-          study_ids: scope === 'specific_studies' ? selectedStudyIds : [],
-          override_study_member_conflict: overrideStudyMemberConflict,
-          override_reason: overrideReason.trim() || undefined,
-        }),
+        body: form,
       })
       const data = await res.json().catch(() => ({}))
       if (res.status === 409 && data.code === 'duplicate_engagement') {
@@ -164,11 +178,17 @@ export default function InstitutionAuditorsManager({
         )
         return
       }
+      if (res.status === 400 && data.code === 'letter_required') {
+        toast.error('Letter required', data.error || 'Upload a PDF engagement letter.')
+        return
+      }
       if (!res.ok) {
         throw new Error(data?.error || res.statusText)
       }
-      const createdCount = Array.isArray(data.created) ? data.created.length : 1
+      const created = Array.isArray(data.created) ? data.created : []
+      const createdCount = created.length || 1
       const skippedCount = Array.isArray(data.skipped) ? data.skipped.length : 0
+
       if (data.email_dispatched) {
         toast.success(
           createdCount > 1 ? 'Engagements created' : 'Engagement created',
@@ -195,6 +215,7 @@ export default function InstitutionAuditorsManager({
       setSelectedStudyIds([])
       setOverrideStudyMemberConflict(false)
       setOverrideReason('')
+      setLetterFile(null)
       await fetchList()
     } catch (e) {
       toast.error('Create failed', e instanceof Error ? e.message : 'Could not create engagement')
@@ -284,6 +305,26 @@ export default function InstitutionAuditorsManager({
     }
   }
 
+  async function handleAttachLetter(row: EngagementRow, file: File) {
+    setActionId(row.id)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch(
+        `/api/institutions/${institutionId}/auditors/${row.id}/letter`,
+        { method: 'POST', body: form }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || res.statusText)
+      toast.success('Letter attached', `SHA-256 ${String(data.file_hash).slice(0, 12)}…`)
+      await fetchList()
+    } catch (e) {
+      toast.error('Letter upload failed', e instanceof Error ? e.message : 'Could not upload')
+    } finally {
+      setActionId(null)
+    }
+  }
+
   const sorted = useMemo(() => {
     return [...engagements].sort((a, b) => {
       const sa = getEngagementStatus(a)
@@ -348,6 +389,22 @@ export default function InstitutionAuditorsManager({
                 placeholder="e.g. State board audit 2026 Q2"
                 className="mt-1"
               />
+            </div>
+
+            <div>
+              <Label htmlFor="auditor-letter">Engagement letter / scope PDF *</Label>
+              <Input
+                id="auditor-letter"
+                type="file"
+                accept=".pdf,application/pdf"
+                className="mt-1"
+                required
+                onChange={(e) => setLetterFile(e.target.files?.[0] ?? null)}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Required. PDF only. Content hash is stored and linked in the audit ledger. Letters
+                cannot be replaced after upload.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -532,9 +589,49 @@ export default function InstitutionAuditorsManager({
                       {startedLabel} → {expiresLabel}
                     </TableCell>
                     <TableCell className="text-sm">
-                      {row.purpose ? row.purpose : '—'}
+                      <div>{row.purpose ? row.purpose : '—'}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {row.engagement_letter_file_hash ? (
+                          <a
+                            className="text-primary hover:underline"
+                            href={`/api/institutions/${institutionId}/auditors/${row.id}/letter`}
+                          >
+                            Letter PDF
+                          </a>
+                        ) : (
+                          <span>No letter</span>
+                        )}
+                        {row.coi_declared_at ? (
+                          <>
+                            {' · '}
+                            COI
+                            {row.coi_has_conflict ? ' (conflict disclosed)' : ' clear'}
+                          </>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell className="space-x-1 text-right">
+                      {!row.engagement_letter_file_hash &&
+                        (status === 'active' || status === 'pending') && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={actionId === row.id}
+                            type="button"
+                            onClick={() => {
+                              const input = document.createElement('input')
+                              input.type = 'file'
+                              input.accept = '.pdf,application/pdf'
+                              input.onchange = () => {
+                                const file = input.files?.[0]
+                                if (file) void handleAttachLetter(row, file)
+                              }
+                              input.click()
+                            }}
+                          >
+                            {actionId === row.id ? '…' : 'Attach letter'}
+                          </Button>
+                        )}
                       {isPending && (
                         <Button
                           size="sm"
