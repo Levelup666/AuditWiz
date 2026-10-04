@@ -1,5 +1,15 @@
 import { createClient } from './supabase/server'
 
+/** Must match the pg_cron purge in supabase/migrations/20261004215906_notification_deletion_and_retention.sql */
+export const NOTIFICATION_RETENTION_DAYS = 90
+
+/** Hides rows past retention that the daily purge has not removed yet. */
+export function getNotificationRetentionCutoffIso(now: Date = new Date()): string {
+  const d = new Date(now)
+  d.setUTCDate(d.getUTCDate() - NOTIFICATION_RETENTION_DAYS)
+  return d.toISOString()
+}
+
 export interface Notification {
   id: string
   user_id: string
@@ -19,6 +29,7 @@ export async function getUnreadNotifications(userId: string, limit = 20): Promis
     .select('*')
     .eq('user_id', userId)
     .is('read_at', null)
+    .gte('created_at', getNotificationRetentionCutoffIso())
     .order('created_at', { ascending: false })
     .limit(limit)
 
@@ -32,6 +43,7 @@ export async function getRecentNotifications(userId: string, limit = 10): Promis
     .from('notifications')
     .select('*')
     .eq('user_id', userId)
+    .gte('created_at', getNotificationRetentionCutoffIso())
     .order('created_at', { ascending: false })
     .limit(limit)
 
@@ -46,6 +58,7 @@ export async function getUnreadNotificationCount(userId: string): Promise<number
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
     .is('read_at', null)
+    .gte('created_at', getNotificationRetentionCutoffIso())
 
   if (error) return 0
   return count ?? 0
@@ -62,6 +75,7 @@ export async function getNotificationsPage(
     .from('notifications')
     .select('*', { count: 'exact' })
     .eq('user_id', userId)
+    .gte('created_at', getNotificationRetentionCutoffIso())
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
@@ -85,4 +99,34 @@ export async function markAllNotificationsRead(userId: string): Promise<boolean>
     .is('read_at', null)
 
   return !error
+}
+
+/** Hard delete; RLS also restricts DELETE to the caller's own rows. */
+export async function deleteNotification(
+  userId: string,
+  notificationId: string
+): Promise<{ ok: true; deleted: boolean } | { ok: false; message: string }> {
+  const supabase = await createClient()
+  const { error, count } = await supabase
+    .from('notifications')
+    .delete({ count: 'exact' })
+    .eq('id', notificationId)
+    .eq('user_id', userId)
+
+  if (error) return { ok: false, message: error.message }
+  return { ok: true, deleted: (count ?? 0) > 0 }
+}
+
+/** Single set-based DELETE over idx_notifications_user_created. */
+export async function deleteAllNotifications(
+  userId: string
+): Promise<{ ok: true; count: number } | { ok: false; message: string }> {
+  const supabase = await createClient()
+  const { error, count } = await supabase
+    .from('notifications')
+    .delete({ count: 'exact' })
+    .eq('user_id', userId)
+
+  if (error) return { ok: false, message: error.message }
+  return { ok: true, count: count ?? 0 }
 }

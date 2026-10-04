@@ -1,5 +1,22 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { NotificationInsert } from '@/lib/notifications/create-notification'
+
+vi.mock('@/lib/supabase/server', () => ({ createClient: vi.fn() }))
+
+const { NOTIFICATION_RETENTION_DAYS, getNotificationRetentionCutoffIso } = await import(
+  '@/lib/notifications'
+)
+
+describe('notification retention', () => {
+  it('defaults to 90 days', () => {
+    expect(NOTIFICATION_RETENTION_DAYS).toBe(90)
+  })
+
+  it('computes the cutoff in UTC days from now', () => {
+    const now = new Date('2026-10-04T12:00:00.000Z')
+    expect(getNotificationRetentionCutoffIso(now)).toBe('2026-07-06T12:00:00.000Z')
+  })
+})
 
 describe('notification insert shape', () => {
   it('supports v1 whitelist types', () => {

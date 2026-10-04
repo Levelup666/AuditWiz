@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { userSignedInViaOrcid } from '@/lib/auth/is-orcid-auth'
+import { NOTIFICATIONS_CHANGED_EVENT } from '@/lib/notifications/events'
 
 export type OrcidSessionIdentity = {
   orcidId: string
@@ -205,16 +206,21 @@ export default function NavProvider({ children }: { children: React.ReactNode })
       return
     }
     let cancelled = false
-    fetch('/api/notifications/unread-count')
-      .then((r) => (r.ok ? r.json() : { count: 0 }))
-      .then((d: { count?: number }) => {
-        if (!cancelled) setUnreadNotificationCount(typeof d?.count === 'number' ? d.count : 0)
-      })
-      .catch(() => {
-        if (!cancelled) setUnreadNotificationCount(0)
-      })
+    const loadUnreadCount = () => {
+      fetch('/api/notifications/unread-count')
+        .then((r) => (r.ok ? r.json() : { count: 0 }))
+        .then((d: { count?: number }) => {
+          if (!cancelled) setUnreadNotificationCount(typeof d?.count === 'number' ? d.count : 0)
+        })
+        .catch(() => {
+          if (!cancelled) setUnreadNotificationCount(0)
+        })
+    }
+    loadUnreadCount()
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, loadUnreadCount)
     return () => {
       cancelled = true
+      window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, loadUnreadCount)
     }
   }, [isAuthenticated, pathname])
 

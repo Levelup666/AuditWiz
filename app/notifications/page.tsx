@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { getNotificationsPage } from '@/lib/notifications'
+import { getNotificationsPage, NOTIFICATION_RETENTION_DAYS } from '@/lib/notifications'
 import NotificationsPageClient from '@/components/notifications/notifications-page-client'
 import { userIsAuditorPrimary } from '@/lib/auditor/is-auditor-primary'
 
@@ -42,13 +42,13 @@ export default async function NotificationsPage({ searchParams }: NotificationsP
       <div>
         <h1 className="text-3xl font-bold text-gray-900">Notifications</h1>
         <p className="mt-2 text-gray-600">
-          Personal alerts about tasks and study membership. This is not the audit log.
+          Personal alerts about tasks and study membership.
         </p>
-        <p className="mt-2 text-sm">
+        {/*<p className="mt-2 text-sm">
           <Link href="/logs" className="text-primary underline-offset-4 hover:underline">
             View audit logs
           </Link>
-        </p>
+        </p>*/}
       </div>
 
       <Card>
@@ -65,6 +65,7 @@ export default async function NotificationsPage({ searchParams }: NotificationsP
             unreadOnly={unreadOnly}
             page={page}
             pageSize={PAGE_SIZE}
+            retentionDays={NOTIFICATION_RETENTION_DAYS}
           />
         </CardContent>
       </Card> 
