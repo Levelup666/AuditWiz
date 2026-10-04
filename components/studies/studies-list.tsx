@@ -116,6 +116,7 @@ export default async function StudiesList({
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead>Code</TableHead>
             <TableHead>Title</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Records</TableHead>
@@ -132,6 +133,15 @@ export default async function StudiesList({
             const hasUnapproved = hasUnapprovedByStudy[study.id] ?? false
             return (
               <TableRow key={study.id}>
+                <TableCell>
+                  {study.public_code ? (
+                    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                      {study.public_code}
+                    </code>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  )}
+                </TableCell>
                 <TableCell className="font-medium">{study.title}</TableCell>
                 <TableCell>{getStatusBadge(study.status)}</TableCell>
                 <TableCell>

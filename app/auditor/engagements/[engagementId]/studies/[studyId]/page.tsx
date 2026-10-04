@@ -76,6 +76,13 @@ export default async function AuditorStudyPage({ params }: PageProps) {
           </Link>
         </p>
         <h1 className="mt-2 text-3xl font-bold text-gray-900">{study.title}</h1>
+        {study.public_code ? (
+          <p className="mt-1">
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+              {study.public_code}
+            </code>
+          </p>
+        ) : null}
         {study.description ? <p className="mt-2 text-gray-600">{study.description}</p> : null}
         <Badge variant="secondary" className="mt-2 capitalize">
           {study.status}

@@ -1,6 +1,10 @@
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { ACTION_BADGE_STYLES, formatActionType, isSystemAuditActor } from '@/lib/audit-trail'
+import {
+  auditEventTargetLabel,
+  displayAuditEventId,
+} from '@/lib/audit/public-ids'
 
 export type AuditEventDisplayContext =
   | { kind: 'record' }
@@ -27,6 +31,8 @@ export function AuditEventRow({ event, actorEmails, context }: AuditEventRowProp
     context.kind === 'hub' && event.study_id
       ? context.studyTitles[String(event.study_id)]
       : null
+  const eventId = typeof event.event_id === 'string' ? event.event_id : ''
+  const targetLabel = auditEventTargetLabel(event)
 
   return (
     <div className="relative flex gap-4 pb-6 last:pb-0">
@@ -37,6 +43,14 @@ export function AuditEventRow({ event, actorEmails, context }: AuditEventRowProp
       <div className="min-w-0 flex-1 rounded-lg border border-gray-200 p-4 transition-colors hover:bg-gray-50">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-2">
+            {eventId ? (
+              <code
+                className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground"
+                title={eventId}
+              >
+                {displayAuditEventId(eventId)}
+              </code>
+            ) : null}
             <Badge
               className={
                 ACTION_BADGE_STYLES[actionType] ?? 'bg-gray-100 text-gray-800'
@@ -62,7 +76,7 @@ export function AuditEventRow({ event, actorEmails, context }: AuditEventRowProp
                 href={`/studies/${context.studyId}/records/${String(event.target_entity_id)}`}
                 className="text-xs text-primary hover:underline"
               >
-                Record {String(event.target_entity_id).slice(0, 8)}…
+                Record {targetLabel ?? `${String(event.target_entity_id).slice(0, 8)}…`}
               </Link>
             ) : null}
           </div>
@@ -76,11 +90,8 @@ export function AuditEventRow({ event, actorEmails, context }: AuditEventRowProp
           {context.kind === 'hub' ? (
             <p>
               <strong>Target:</strong> {String(event.target_entity_type)}
-              {event.target_entity_id ? (
-                <span className="text-muted-foreground">
-                  {' '}
-                  ({String(event.target_entity_id).slice(0, 8)}…)
-                </span>
+              {targetLabel ? (
+                <span className="text-muted-foreground"> ({targetLabel})</span>
               ) : null}
             </p>
           ) : null}

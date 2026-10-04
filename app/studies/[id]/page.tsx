@@ -93,6 +93,13 @@ export default async function StudyPage({ params, searchParams }: StudyPageProps
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">{study.title}</h1>
+          {study.public_code ? (
+            <p className="mt-1">
+              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                {study.public_code}
+              </code>
+            </p>
+          ) : null}
           <p className="mt-2 text-gray-600">{study.description}</p>
           {study.required_approval_count != null && study.required_approval_count > 1 && (
             <p className="mt-2 text-sm text-gray-500">

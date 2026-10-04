@@ -9,7 +9,12 @@ import { Label } from '@/components/ui/label'
 import { Download } from 'lucide-react'
 import { AuditEventTimeline } from '@/components/audit/audit-event-timeline'
 
-type StudyRow = { id: string; title: string; institution_id: string | null }
+type StudyRow = {
+  id: string
+  title: string
+  institution_id: string | null
+  public_code?: string | null
+}
 
 type OrgScope =
   | null
@@ -57,7 +62,13 @@ export default function LogsExplorer({
   const searchParams = useSearchParams()
 
   const studyTitles = useMemo(
-    () => Object.fromEntries(studies.map((s) => [s.id, s.title])),
+    () =>
+      Object.fromEntries(
+        studies.map((s) => [
+          s.id,
+          s.public_code ? `${s.public_code} · ${s.title}` : s.title,
+        ])
+      ),
     [studies]
   )
 
@@ -291,7 +302,7 @@ export default function LogsExplorer({
               >
                 {studies.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.title}
+                    {s.public_code ? `${s.public_code} · ${s.title}` : s.title}
                   </option>
                 ))}
               </select>
@@ -360,7 +371,7 @@ export default function LogsExplorer({
                               replaceLogsUrl({ main: 'study', studyId: s.id, orgScope: null })
                             }}
                           >
-                            {s.title}
+                            {s.public_code ? `${s.public_code} · ${s.title}` : s.title}
                           </button>
                         </li>
                       ))}

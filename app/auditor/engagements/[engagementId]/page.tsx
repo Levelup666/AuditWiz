@@ -30,34 +30,41 @@ export default async function AuditorEngagementDetailPage({ params }: PageProps)
     .eq('id', engagement.institution_id)
     .maybeSingle()
 
-  let studies: Array<{ id: string; title: string; status: string | null }> = []
+  let studies: Array<{
+    id: string
+    title: string
+    status: string | null
+    public_code?: string | null
+  }> = []
   if (engagement.scope === 'specific_studies') {
     const { data: links } = await supabase
       .from('audit_engagement_studies')
-      .select('study_id, study:studies(id, title, status)')
+      .select('study_id, study:studies(id, title, status, public_code)')
       .eq('engagement_id', engagementId)
     studies = (links ?? []).map((row) => {
       const raw = row.study as
-        | { id: string; title: string; status: string }
-        | { id: string; title: string; status: string }[]
+        | { id: string; title: string; status: string; public_code?: string | null }
+        | { id: string; title: string; status: string; public_code?: string | null }[]
         | null
       const study = Array.isArray(raw) ? raw[0] ?? null : raw
       return {
         id: study?.id ?? row.study_id,
         title: study?.title ?? '(untitled study)',
         status: study?.status ?? null,
+        public_code: study?.public_code ?? null,
       }
     })
   } else {
     const { data } = await supabase
       .from('studies')
-      .select('id, title, status')
+      .select('id, title, status, public_code')
       .eq('institution_id', engagement.institution_id)
       .order('title', { ascending: true })
     studies = (data ?? []).map((s) => ({
       id: s.id,
       title: s.title,
       status: s.status,
+      public_code: s.public_code,
     }))
   }
 
@@ -145,6 +152,11 @@ export default async function AuditorEngagementDetailPage({ params }: PageProps)
                     href={`/auditor/engagements/${engagementId}/studies/${s.id}`}
                     className="text-primary hover:underline"
                   >
+                    {s.public_code ? (
+                      <code className="mr-2 rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                        {s.public_code}
+                      </code>
+                    ) : null}
                     {s.title}
                   </Link>
                   {s.status ? (

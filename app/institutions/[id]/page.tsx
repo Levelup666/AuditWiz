@@ -56,7 +56,7 @@ export default async function InstitutionDashboardPage({ params }: PageProps) {
   // For dashboard we show institution's studies; user can only open those they're study_member of
   const { data: studies } = await supabase
     .from('studies')
-    .select('id, title, status, updated_at')
+    .select('id, title, public_code, status, updated_at')
     .eq('institution_id', id)
     .order('updated_at', { ascending: false })
   const studyTitles = Object.fromEntries((studies ?? []).map((s: any) => [s.id, s.title]))
@@ -144,7 +144,7 @@ export default async function InstitutionDashboardPage({ params }: PageProps) {
   const { data: institutionActivityEvents, error: activityError } = await supabase
     .from('audit_events')
     .select(
-      'id, study_id, actor_id, actor_role_at_time, action_type, target_entity_type, target_entity_id, timestamp, metadata'
+      'id, event_id, study_id, actor_id, actor_role_at_time, action_type, target_entity_type, target_entity_id, timestamp, metadata'
     )
     .contains('metadata', { institution_id: id })
     .order('timestamp', { ascending: false })
@@ -266,7 +266,14 @@ export default async function InstitutionDashboardPage({ params }: PageProps) {
                     className="flex flex-col gap-2 rounded-lg border p-3 sm:flex-row sm:items-start sm:justify-between"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium">{study.title}</p>
+                      <p className="font-medium">
+                        {study.public_code ? (
+                          <code className="mr-2 rounded bg-muted px-1.5 py-0.5 font-mono text-xs font-normal">
+                            {study.public_code}
+                          </code>
+                        ) : null}
+                        {study.title}
+                      </p>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         {getStatusBadge(study.status)}
                         {!canOpen && !isAdmin && (

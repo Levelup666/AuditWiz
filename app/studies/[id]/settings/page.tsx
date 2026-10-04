@@ -39,7 +39,7 @@ export default async function StudySettingsPage({ params }: SettingsPageProps) {
   const { data: study, error } = await supabase
     .from('studies')
     .select(
-      'id, title, status, required_approval_count, require_review_before_approval, allow_creator_approval, metadata, max_members'
+      'id, title, public_code, status, required_approval_count, require_review_before_approval, allow_creator_approval, metadata, max_members'
     )
     .eq('id', studyId)
     .single()
@@ -86,6 +86,7 @@ export default async function StudySettingsPage({ params }: SettingsPageProps) {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Study settings</h1>
           <p className="mt-1 text-gray-600">
+            {study.public_code ? `${study.public_code} · ` : ''}
             {study.title} — workflow and security options
           </p>
         </div>

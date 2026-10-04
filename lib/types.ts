@@ -60,6 +60,8 @@ export interface InstitutionMember {
 
 export interface Study {
   id: string;
+  /** Immutable human-readable study identifier, e.g. STD-0042. */
+  public_code?: string;
   title: string;
   description: string | null;
   documentation?: string | null;

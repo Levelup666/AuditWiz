@@ -46,7 +46,7 @@ export default async function LogsPage({
 
   const { data: studies, error } = await supabase
     .from('studies')
-    .select('id, title, institution_id')
+    .select('id, title, institution_id, public_code')
     .in('id', auditStudyIds)
     .order('title')
 
